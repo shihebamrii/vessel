@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/shihebaamrii/vessel/actions"><img src="https://img.shields.io/github/actions/workflow/status/shihebaamrii/vessel/ci.yml?branch=main&style=flat-square" alt="Build Status"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/shihebaamrii/vessel?style=flat-square&color=blue" alt="License"></a>
-  <a href="https://github.com/shihebaamrii/vessel/releases"><img src="https://img.shields.io/github/v/release/shihebaamrii/vessel?style=flat-square" alt="Latest Release"></a>
+  <a href="https://github.com/shihebamrii/vessel/actions"><img src="https://img.shields.io/github/actions/workflow/status/shihebamrii/vessel/ci.yml?branch=main&style=flat-square" alt="Build Status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/shihebamrii/vessel?style=flat-square&color=blue" alt="License"></a>
+  <a href="https://github.com/shihebamrii/vessel/releases"><img src="https://img.shields.io/github/v/release/shihebamrii/vessel?style=flat-square" alt="Latest Release"></a>
   <a href="https://tauri.app"><img src="https://img.shields.io/badge/Tauri-v2-38bdf8?style=flat-square" alt="Tauri"></a>
 </p>
 
@@ -73,7 +73,7 @@ Vessel leverages a secure, multi-threaded asynchronous architecture separating s
 ## 🛠️ Installation & Building
 
 ### 1. Download Pre-built Release
-Visit our [Releases Page](https://github.com/shihebaamrii/vessel/releases) to download the native installer for your operating system:
+Visit our [Releases Page](https://github.com/shihebamrii/vessel/releases) to download the native installer for your operating system:
 *   **Windows:** `.msi` or `.exe` installer.
 *   **macOS:** `.dmg` installer (Universal binary).
 *   **Linux:** `.deb` package.
@@ -82,7 +82,7 @@ Visit our [Releases Page](https://github.com/shihebaamrii/vessel/releases) to do
 Please review our [Contributing Guidelines](CONTRIBUTING.md) for local environment setup details.
 ```bash
 # Clone the repository
-git clone https://github.com/shihebaamrii/vessel.git
+git clone https://github.com/shihebamrii/vessel.git
 cd vessel
 
 # Install dependencies
