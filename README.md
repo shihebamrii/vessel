@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <video src="public/Demo.mp4" width="100%" controls autoplay loop muted></video>
+  <video src="https://github.com/shihebamrii/vessel/raw/main/public/Demo.mp4" width="100%" controls autoplay loop muted></video>
 </p>
 
 ---
