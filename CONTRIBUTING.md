@@ -18,7 +18,7 @@ To build and run Vessel locally, you need the following prerequisites:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/vessel.git
+   git clone https://github.com/shihebamrii/vessel.git
    cd vessel
    ```
 2. Install frontend dependencies:
