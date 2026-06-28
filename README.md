@@ -1,125 +1,279 @@
 # Vessel ⚓
 
 <p align="center">
-  <strong>Vessel</strong> is a modern, local-first desktop control plane that gives you a beautiful, premium GUI to manage, monitor, and deploy configurations to your VPS servers over standard SSH—with zero server overhead and complete privacy.
+  <img src="./public/DemoFinal.gif" alt="Vessel Demo">
 </p>
 
 <p align="center">
-  <a href="https://github.com/shihebamrii/vessel/actions"><img src="https://img.shields.io/github/actions/workflow/status/shihebamrii/vessel/ci.yml?branch=main&style=flat-square" alt="Build Status"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/shihebamrii/vessel?style=flat-square&color=blue" alt="License"></a>
-  <a href="https://github.com/shihebamrii/vessel/releases"><img src="https://img.shields.io/github/v/release/shihebamrii/vessel?style=flat-square" alt="Latest Release"></a>
-  <a href="https://tauri.app"><img src="https://img.shields.io/badge/Tauri-v2-38bdf8?style=flat-square" alt="Tauri"></a>
+  <strong>A modern, local-first control plane for VPS management.</strong>
 </p>
 
-![](public/DemoFinal.gif)
+<p align="center">
+  Manage servers, Docker containers, services, files, and reverse proxies through a premium desktop experience — powered entirely by SSH.
+</p>
+
+<p align="center">
+  <a href="https://github.com/shihebamrii/vessel/actions">
+    <img src="https://img.shields.io/github/actions/workflow/status/shihebamrii/vessel/ci.yml?branch=main&style=for-the-badge" />
+  </a>
+
+  <a href="https://github.com/shihebamrii/vessel/releases">
+    <img src="https://img.shields.io/github/v/release/shihebamrii/vessel?style=for-the-badge" />
+  </a>
+
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/shihebamrii/vessel?style=for-the-badge" />
+  </a>
+
+  <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/SolidJS-2C4F7C?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge" />
+</p>
+
 ---
 
-## ⚡ Why Vessel?
+## 🎥 Demo
 
-*   **Zero Server Footprint:** Traditional panels (like cPanel or aaPanel) run heavy web services directly on your VPS, consuming hundreds of megabytes of RAM. Vessel is **agentless**—it runs on your desktop and operates over standard SSH.
-*   **Local-First Privacy:** Your SSH private keys, passwords, and configurations never leave your machine. Credentials are encrypted and stored securely inside your operating system's native secure vault (macOS Keychain, Windows Credential Manager, or Linux Secret Service).
-*   **Futuristic Glassmorphic UI:** A premium, ultra-responsive dashboard built with SolidJS and custom CSS variables, optimized for high FPS rendering.
-*   **Unified Control Plane:** Seamlessly manage files, terminal commands, active systemd services, Docker containers, and reverse proxy configs in a single dashboard.
+<p align="center">
+  <a href="https://github.com/shihebamrii/vessel/raw/main/public/Demo.mp4">
+    <img src="./public/DemoFinal.gif" alt="Vessel Demo">
+  </a>
+</p>
+
+<p align="center">
+  <b>Click the preview above to watch the full video.</b>
+</p>
 
 ---
 
-## 🏗️ Architecture
+## ✨ What is Vessel?
 
-Vessel leverages a secure, multi-threaded asynchronous architecture separating system operations from the rendering view:
+Vessel is a **desktop-native control plane** for managing Linux servers through standard SSH.
 
+Unlike traditional panels such as cPanel, Plesk, or aaPanel, Vessel installs **nothing** on your VPS.
+
+No agents.
+
+No daemons.
+
+No web dashboards.
+
+No additional attack surface.
+
+Your machine remains exactly as it was—Vessel simply connects securely through SSH and gives you a modern interface for operating it.
+
+---
+
+## 🚀 Why Vessel?
+
+### 🔒 Local First
+
+Your credentials never leave your computer.
+
+SSH keys and secrets are stored using native operating-system secure storage:
+
+* Windows Credential Manager
+* macOS Keychain
+* Linux Secret Service
+
+### ⚡ Zero Server Overhead
+
+Traditional hosting panels consume RAM, CPU, storage, and expose additional services.
+
+Vessel uses:
+
+* SSH
+* SFTP
+* Existing Linux tooling
+
+Nothing else.
+
+### 🎨 Premium Native Experience
+
+Built with:
+
+* Rust
+* Tauri v2
+* SolidJS
+* xterm.js
+* WebGL acceleration
+
+The result is a fast, lightweight desktop experience with modern glassmorphic design principles.
+
+### 🛠 One Unified Dashboard
+
+Manage:
+
+* Files
+* Terminals
+* systemd services
+* Docker containers
+* Nginx
+* Caddy
+* SSL certificates
+* Resource monitoring
+
+From one application.
+
+---
+
+## 🏗 Architecture
+
+```text
+┌───────────────────────────────────────┐
+│        Local Desktop (Tauri)          │
+│                                       │
+│  ┌───────────┐       ┌─────────────┐  │
+│  │ SolidJS   │◄────►│ Rust Backend│  │
+│  └───────────┘  IPC  └──────┬──────┘  │
+└─────────────────────────────┼─────────┘
+                              │
+                     SSH / SFTP Tunnel
+                              │
+                              ▼
+┌───────────────────────────────────────┐
+│           Remote VPS Host             │
+│                                       │
+│  • systemd                            │
+│  • Docker                             │
+│  • Nginx / Caddy                      │
+│  • Existing Linux environment         │
+└───────────────────────────────────────┘
 ```
-┌───────────────────────────────────────┐         Secure SSH/SFTP Tunnel
-│        Local Desktop (Tauri)          │   ==============================>   ┌───────────────────────────┐
-│  ┌───────────┐         ┌───────────┐  │   - SSH Port 22 Only                │      Remote VPS (Host)    │
-│  │ SolidJS   │  ◄───►  │ Rust      │  │   - No local keys on Webview        │  - systemd services       │
-│  │ Frontend  │  (IPC)  │ Backend   │  │   - Local OS Keychain               │  - Docker Engine          │
-│  └───────────┘         └─────┬─────┘  │                                     │  - Nginx / Caddy Proxy    │
-└──────────────────────────────┼────────┘                                     └───────────────────────────┘
-                               ▼
-                    [ Native Secure Vault ]
-                  (Credential Manager / Keychain)
-```
 
 ---
 
-## 🚀 Features
+## 🔥 Features
 
-### 🖥️ 1. Resource Dashboard
-*   Real-time polling of CPU load, Memory allocation, Disk capacity, and system uptime.
-*   Interactive, smooth vector progress indicators.
+### 📊 Resource Monitoring
 
-### 📂 2. File Explorer & Editor
-*   An SFTP-like file tree browser (folder creation, renaming, and permissions management).
-*   Integrated code editor workspace with direct base64-isolated remote write operations.
-*   Visual permission manager supporting numerical `chmod` adjustments in 1 click.
+* CPU usage
+* Memory statistics
+* Disk utilization
+* Uptime tracking
+* Real-time updates
 
-### 🐚 3. Embedded Shell Terminal
-*   Hardware-accelerated terminal emulator using `xterm.js` and WebGL.
-*   Persistent PTY shell streaming over safe tokio mpsc messaging blocks.
+### 📁 File Manager
 
-### ⚙️ 4. Services & Docker Supervisors
-*   **systemd Supervisor:** Start, stop, and restart services; tail live log logs cleanly.
-*   **Docker Supervisor:** Monitor active/stopped containers, trigger actions, and dump logs.
+* Remote file browsing
+* Rename, move, delete
+* Permission editing
+* Inline code editor
+* Binary file protection
 
-### 🌐 5. Reverse Proxy Configurator
-*   Forms to generate and deploy site blocks for **Nginx** and **Caddy** reverse proxies.
-*   Automated SSL certificate request using **Certbot (Let's Encrypt)**.
+### 🖥 Integrated Terminal
 
----
+* xterm.js + WebGL acceleration
+* Persistent SSH sessions
+* Low-latency PTY streaming
 
-## 🆕 What's New (Latest Release Updates)
+### ⚙️ Service Management
 
-We've shipped significant upgrades since the initial release, focusing on host-level security, interactive log diagnostics, and deep dashboard telemetry.
+* Start and stop services
+* Restart operations
+* Live journal logs
+* Status monitoring
 
-### 🛡️ 1. Host-Level Security Hardening
-* **Input Sanitization:** Implemented strict backend validation across all filesystem endpoints (`read`, `write`, `delete`, `chmod`, `list`) to filter null-byte sequences and control characters.
-* **Command Injection Guard:** Prevent shell arguments expansion and path traversal vulnerabilities over the SSH connection.
+### 🐳 Docker Dashboard
 
-### 📊 2. Dynamic Log Monitors (Split-Pane Layout)
-* **Real-time Diagnostics Console:** Both systemd Service Supervisor and Docker Container Supervisor now feature a high-fidelity split-pane dashboard with interactive log streams (`journalctl` and `docker logs`).
-* **Pulse Status Indicators:** Visual micro-animations showing running, inactive, or error states at a glance.
-* **Manual Log Fetching:** One-click telemetry retrieval directly inside the control plane.
+* Container lifecycle management
+* Live logs
+* Running/stopped states
+* Quick actions
 
-### 📈 3. Extended System Telemetry Inventory
-* **Dashboard Summary:** A new dedicated system inventory panel displaying real-time Hostname, OS Kernel Release, Physical RAM capacity, and detailed Storage Root utilization.
-* **Custom Gauge Bars:** Replaced browser-default ranges with high-contrast, CSS-themed resource utilization visualizers.
+### 🌍 Reverse Proxy Manager
 
-### 🔍 4. Mapped Routes Search Engine
-* **Instant Filter Routing:** Added search indexing to the Reverse Proxy panel, letting you filter active Nginx/Caddy server blocks and local target ports in real-time.
-* **Inline Navigation Hub:** Clickable domain links with target external indicators to launch proxy sites directly from the dashboard.
-
-### 📂 5. Refined Editor Workspace
-* **Binary File Protection:** Safe-fail dashboard preventing binary file corruption, showing file metadata (byte sizes, timestamps, access modes).
-* **Direct Permissions Tool:** An inline `chmod` permission configurator to toggle host access permissions instantly.
+* Nginx configuration generation
+* Caddy support
+* SSL provisioning
+* Let's Encrypt integration
 
 ---
 
-## 🛠️ Installation & Building
+## 🛡 Security
 
-### 1. Download Pre-built Release
-Visit our [Releases Page](https://github.com/shihebamrii/vessel/releases) to download the native installer for your operating system:
-*   **Windows:** `.msi` or `.exe` installer.
-*   **macOS:** `.dmg` installer (Universal binary).
-*   **Linux:** `.deb` package.
+Security is a first-class concern.
 
-### 2. Build From Source
-Please review our [Contributing Guidelines](CONTRIBUTING.md) for local environment setup details.
+Recent improvements include:
+
+* Input validation on all filesystem operations
+* Path traversal protection
+* Null-byte filtering
+* Shell injection prevention
+* Safe command argument handling
+* Binary file corruption safeguards
+* Native credential vault integration
+
+---
+
+## 🛠 Installation
+
+### Download Releases
+
+Get the latest binaries from:
+
+https://github.com/shihebamrii/vessel/releases
+
+Supported platforms:
+
+* Windows (.exe, .msi)
+* Linux (.deb)
+* macOS (.dmg)
+
+---
+
+### Build From Source
+
 ```bash
-# Clone the repository
 git clone https://github.com/shihebamrii/vessel.git
+
 cd vessel
 
-# Install dependencies
 npm install
 
-# Run in developer mode
-npm run dev
+npm run tauri dev
+```
+
+Build production binaries:
+
+```bash
+npm run tauri build
 ```
 
 ---
 
 ## 🤝 Contributing
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**. Please read [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+
+Contributions are welcome.
+
+Whether it's:
+
+* Bug reports
+* UI improvements
+* Documentation
+* Security reviews
+* Feature proposals
+
+please open an issue or submit a pull request.
+
+See:
+
+```text
+CONTRIBUTING.md
+```
+
+for development guidelines.
+
+---
 
 ## 📄 License
-Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+
+Licensed under the MIT License.
+
+See:
+
+```text
+LICENSE
+```
+
+for more information.
