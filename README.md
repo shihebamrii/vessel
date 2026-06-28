@@ -11,10 +11,7 @@
   <a href="https://tauri.app"><img src="https://img.shields.io/badge/Tauri-v2-38bdf8?style=flat-square" alt="Tauri"></a>
 </p>
 
-<p align="center">
-  <img src="public/DemoFinal.gif" alt="Vessel Demo" width="800">
-</p>
-
+![](public/DemoFinal.gif)
 ---
 
 ## ⚡ Why Vessel?
