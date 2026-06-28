@@ -1,8 +1,6 @@
 # Vessel ⚓
 
-<p align="center">
-  <img src="./public/DemoFinal.gif" alt="Vessel Demo">
-</p>
+
 
 <p align="center">
   <strong>A modern, local-first control plane for VPS management.</strong>
