@@ -12,7 +12,9 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/shihebamrii/vessel/raw/main/public/Demo.mp4" width="100%" controls autoplay loop muted></video>
+  <a href="https://github.com/shihebamrii/vessel/raw/main/public/Demo.mp4">
+    🎥 Watch Demo
+  </a>
 </p>
 
 ---
