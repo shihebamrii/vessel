@@ -12,9 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/shihebamrii/vessel/raw/main/public/Demo.mp4">
-    🎥 Watch Demo
-  </a>
+  <img src="public/DemoFinal.gif" alt="Vessel Demo" width="800">
 </p>
 
 ---
@@ -69,6 +67,33 @@ Vessel leverages a secure, multi-threaded asynchronous architecture separating s
 ### 🌐 5. Reverse Proxy Configurator
 *   Forms to generate and deploy site blocks for **Nginx** and **Caddy** reverse proxies.
 *   Automated SSL certificate request using **Certbot (Let's Encrypt)**.
+
+---
+
+## 🆕 What's New (Latest Release Updates)
+
+We've shipped significant upgrades since the initial release, focusing on host-level security, interactive log diagnostics, and deep dashboard telemetry.
+
+### 🛡️ 1. Host-Level Security Hardening
+* **Input Sanitization:** Implemented strict backend validation across all filesystem endpoints (`read`, `write`, `delete`, `chmod`, `list`) to filter null-byte sequences and control characters.
+* **Command Injection Guard:** Prevent shell arguments expansion and path traversal vulnerabilities over the SSH connection.
+
+### 📊 2. Dynamic Log Monitors (Split-Pane Layout)
+* **Real-time Diagnostics Console:** Both systemd Service Supervisor and Docker Container Supervisor now feature a high-fidelity split-pane dashboard with interactive log streams (`journalctl` and `docker logs`).
+* **Pulse Status Indicators:** Visual micro-animations showing running, inactive, or error states at a glance.
+* **Manual Log Fetching:** One-click telemetry retrieval directly inside the control plane.
+
+### 📈 3. Extended System Telemetry Inventory
+* **Dashboard Summary:** A new dedicated system inventory panel displaying real-time Hostname, OS Kernel Release, Physical RAM capacity, and detailed Storage Root utilization.
+* **Custom Gauge Bars:** Replaced browser-default ranges with high-contrast, CSS-themed resource utilization visualizers.
+
+### 🔍 4. Mapped Routes Search Engine
+* **Instant Filter Routing:** Added search indexing to the Reverse Proxy panel, letting you filter active Nginx/Caddy server blocks and local target ports in real-time.
+* **Inline Navigation Hub:** Clickable domain links with target external indicators to launch proxy sites directly from the dashboard.
+
+### 📂 5. Refined Editor Workspace
+* **Binary File Protection:** Safe-fail dashboard preventing binary file corruption, showing file metadata (byte sizes, timestamps, access modes).
+* **Direct Permissions Tool:** An inline `chmod` permission configurator to toggle host access permissions instantly.
 
 ---
 

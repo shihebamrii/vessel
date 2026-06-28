@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, createEffect, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { Folder, File, ArrowLeft, Save, Plus, Trash2, FileText, Lock, Loader } from "lucide-solid";
+import { Folder, File, ArrowLeft, Save, Plus, Trash2, FileText, Lock, Loader, Upload } from "lucide-solid";
 import { EditorView, basicSetup } from "codemirror";
 import { EditorState } from "@codemirror/state";
 
@@ -46,6 +46,95 @@ export default function FileExplorerView(props: FileExplorerProps) {
   const [newitemName, setNewitemName] = createSignal("");
   const [showNewItemInput, setShowNewItemInput] = createSignal<"file" | "folder" | null>(null);
 
+  const [uploading, setUploading] = createSignal(false);
+  const [isDragging, setIsDragging] = createSignal(false);
+  let fileInputRef: HTMLInputElement | undefined;
+
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const arrayBuffer = e.target?.result as ArrayBuffer;
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        resolve(btoa(binary));
+      };
+      reader.onerror = () => reject(new Error("Failed to read local file"));
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const uploadMultipleFiles = async (selectedFilesList: FileList | File[]) => {
+    const selectedFiles = Array.from(selectedFilesList);
+    if (selectedFiles.length === 0) return;
+
+    const maxSizeBytes = 15 * 1024 * 1024; // 15MB limit
+
+    // Validate size of each file
+    for (const file of selectedFiles) {
+      if (file.size > maxSizeBytes) {
+        props.showToast(`"${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Max size is 15MB.`, "error");
+        if (fileInputRef) fileInputRef.value = "";
+        return;
+      }
+    }
+
+    setUploading(true);
+    props.showToast(`Starting upload of ${selectedFiles.length} file(s)...`, "info");
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      try {
+        let cleanName = file.name.replace(/[\/\\]/g, "_").replace(/\0/g, "");
+        if (!cleanName || cleanName === "." || cleanName === "..") {
+          cleanName = `uploaded_file_${Date.now()}_${i}`;
+        }
+
+        const parent = currentPath() === "/" ? "" : currentPath();
+        const targetPath = `${parent}/${cleanName}`;
+
+        props.showToast(`Uploading ${cleanName} (${i + 1}/${selectedFiles.length})...`, "info");
+
+        const b64 = await readFileAsBase64(file);
+
+        await invoke("write_remote_file", {
+          serverId: props.serverId,
+          path: targetPath,
+          base64Content: b64
+        });
+      } catch (err: any) {
+        props.showToast(`Upload failed for "${file.name}": ${err.toString()}`, "error");
+        break;
+      }
+    }
+
+    props.showToast("All uploads completed successfully.", "success");
+    if (fileInputRef) fileInputRef.value = "";
+    setUploading(false);
+    loadDirectory(currentPath());
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      uploadMultipleFiles(e.dataTransfer.files);
+    }
+  };
+
   let editorContainer: HTMLDivElement | undefined;
   let editorView: EditorView | undefined;
 
@@ -69,8 +158,6 @@ export default function FileExplorerView(props: FileExplorerProps) {
     }
   };
 
-
-
   // Open file in CodeMirror
   const openFile = async (item: FileInfo) => {
     const parent = currentPath() === "/" ? "" : currentPath();
@@ -91,7 +178,6 @@ export default function FileExplorerView(props: FileExplorerProps) {
     setLoading(true);
     try {
       const b64: string = await invoke("read_remote_file", { serverId: props.serverId, path: filePath });
-      // Decode base64 to raw text supporting multi-byte UTF-8 characters
       const binaryString = atob(b64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -103,9 +189,6 @@ export default function FileExplorerView(props: FileExplorerProps) {
       setActiveFile(filePath);
       setActiveFileContent(rawText);
       setActiveFilePermissions(item.permissions);
-      
-      // Attempt to extract numerical permissions from octal/character maps
-      // Standard chmod default is 644
       setActiveFileChmod("644");
       setIsEditorDirty(false);
 
@@ -127,7 +210,7 @@ export default function FileExplorerView(props: FileExplorerProps) {
     
     setSaveStatus("Saving...");
     const contentToSave = editorView ? editorView.state.doc.toString() : activeFileContent();
-    const b64 = btoa(unescape(encodeURIComponent(contentToSave))); // Encode text cleanly to base64
+    const b64 = btoa(unescape(encodeURIComponent(contentToSave)));
 
     try {
       await invoke("write_remote_file", {
@@ -137,10 +220,9 @@ export default function FileExplorerView(props: FileExplorerProps) {
       });
       
       setIsEditorDirty(false);
-      setSaveStatus("Changes saved successfully!");
+      setSaveStatus("Saved successfully");
       setTimeout(() => setSaveStatus(""), 3000);
       
-      // Reload directory to update file sizes
       loadDirectory(currentPath());
     } catch (e: any) {
       setSaveStatus(`Save failed: ${e.toString()}`);
@@ -177,10 +259,8 @@ export default function FileExplorerView(props: FileExplorerProps) {
 
     try {
       if (showNewItemInput() === "file") {
-        // Write an empty base64 string to create empty file
         await invoke("write_remote_file", { serverId: props.serverId, path: targetPath, base64Content: "" });
       } else {
-        // Create directory
         await invoke("create_directory", { serverId: props.serverId, path: targetPath });
       }
       setNewitemName("");
@@ -223,13 +303,20 @@ export default function FileExplorerView(props: FileExplorerProps) {
             EditorView.theme({
               "&": {
                 height: "100%",
-                background: "#080c14",
-                color: "#f8fafc",
+                background: "#040507",
+                color: "#f5f6f8",
               },
               ".cm-gutters": {
-                background: "#0f172a",
-                color: "#64748b",
-                border: "none"
+                background: "#0c0d10",
+                color: "#545456",
+                border: "none",
+                borderRight: "1px solid #1e2026"
+              },
+              ".cm-activeLine": {
+                backgroundColor: "#101217"
+              },
+              ".cm-activeLineGutter": {
+                backgroundColor: "#101217"
               }
             }, { dark: true })
           ]
@@ -243,49 +330,79 @@ export default function FileExplorerView(props: FileExplorerProps) {
     if (editorView) editorView.destroy();
   });
 
-  // Re-poll folder on mount server changes
   createEffect(() => {
     loadDirectory("/");
   });
 
   return (
-    <div class="h-full flex flex-col" style={{ height: "calc(100vh - 120px)" }}>
+    <div class="h-full flex flex-col min-h-0" style={{ height: "calc(100vh - 120px)" }}>
       {/* File Explorer layout split */}
-      <div class="flex-1 flex gap-6 overflow-hidden">
+      <div class="flex-1 flex gap-4 overflow-hidden min-h-0">
         {/* Left Side: Directory Tree browser */}
-        <div class="w-1/3 flex flex-col glass-panel p-4 h-full overflow-hidden">
-          <div class="mb-4 flex items-center justify-between">
-            <h3 class="font-semibold text-lg flex items-center gap-2">
-              <Folder class="text-accent-cyan" size={20} /> Browser
+        <div 
+          class={`w-1/3 flex flex-col glass-panel p-3 h-full overflow-hidden transition-all duration-200 ${isDragging() ? 'border-2 border-dashed border-accent-cyan bg-accent-cyan/5 scale-[0.99]' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={(e) => {
+              if (e.currentTarget.files) {
+                uploadMultipleFiles(e.currentTarget.files);
+              }
+            }}
+            style={{ display: "none" }}
+            multiple
+          />
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="font-bold text-xs uppercase tracking-wider font-mono flex items-center gap-1.5">
+              <Folder class="text-accent-cyan" size={13} /> Directories
             </h3>
-            <div class="flex gap-2">
+            <div class="flex gap-1.5">
               <button 
-                class="p-1.5 rounded bg-white/5 hover:bg-accent-cyan/20 text-text-secondary hover:text-accent-cyan transition-colors"
+                class="btn-secondary p-1 text-[11px]"
                 onClick={() => setShowNewItemInput(showNewItemInput() === "file" ? null : "file")}
                 title="New File"
               >
-                <Plus size={16} />
+                <Plus size={12} />
               </button>
               <button 
-                class="p-1.5 rounded bg-white/5 hover:bg-accent-indigo/20 text-text-secondary hover:text-accent-indigo transition-colors"
+                class="btn-secondary p-1 text-[11px]"
                 onClick={() => setShowNewItemInput(showNewItemInput() === "folder" ? null : "folder")}
                 title="New Folder"
               >
-                <Folder size={16} />
+                <Folder size={12} />
+              </button>
+              <button 
+                class="btn-secondary p-1 text-[11px] relative"
+                onClick={() => fileInputRef?.click()}
+                title="Upload Files (Max 15MB each)"
+                disabled={uploading()}
+              >
+                <Show when={uploading()}>
+                  <Loader class="animate-spin text-accent-cyan" size={12} />
+                </Show>
+                <Show when={!uploading()}>
+                  <Upload size={12} />
+                </Show>
               </button>
             </div>
           </div>
 
           {/* Breadcrumb controls */}
-          <div class="mb-3 flex gap-2 items-center text-sm bg-slate-900/40 p-2 rounded-lg border border-white/5">
+          <div class="mb-3 flex gap-2 items-center bg-slate-950/40 p-1.5 rounded border">
             <button 
-              class="p-1 rounded hover:bg-white/10 disabled:opacity-40"
+              class="btn-secondary p-1 disabled:opacity-40"
               onClick={handleBack} 
               disabled={currentPath() === "/"}
             >
-              <ArrowLeft size={16} />
+              <ArrowLeft size={12} />
             </button>
-            <span class="truncate font-mono text-xs text-text-secondary">{currentPath()}</span>
+            <span class="truncate font-mono text-[10px] text-text-secondary select-all" title={currentPath()}>
+              {currentPath()}
+            </span>
           </div>
 
           {/* New Item creation textfield */}
@@ -293,32 +410,33 @@ export default function FileExplorerView(props: FileExplorerProps) {
             <div class="mb-3 flex gap-2">
               <input
                 type="text"
-                placeholder={showNewItemInput() === "file" ? "file.txt" : "New Folder"}
+                placeholder={showNewItemInput() === "file" ? "filename.txt" : "Folder Name"}
                 value={newitemName()}
                 onInput={(e) => setNewitemName(e.currentTarget.value)}
-                class="flex-1 text-xs py-1.5"
+                class="flex-1 text-xs py-1"
+                autofocus
               />
-              <button class="btn-primary py-1.5 px-3 text-xs" onClick={createItem}>Create</button>
+              <button class="btn-primary py-1 px-3 text-xs" onClick={createItem}>Create</button>
             </div>
           </Show>
 
           {/* Directory Item List container */}
-          <div class="flex-1 overflow-y-auto space-y-1 pr-1">
+          <div class="flex-1 overflow-y-auto space-y-0.5 pr-1 font-mono">
             <Show when={loading()}>
-              <div class="py-8 flex justify-center items-center gap-2 text-text-secondary text-sm">
-                <Loader class="animate-spin text-accent-cyan" size={16} /> Loading files...
+              <div class="py-8 flex justify-center items-center gap-2 text-text-secondary text-xs">
+                <Loader class="animate-spin text-accent-cyan" size={12} /> Loading directory...
               </div>
             </Show>
             
             <Show when={!loading() && files().length === 0}>
-              <div class="py-8 text-center text-text-muted text-xs font-mono">Empty Directory</div>
+              <div class="py-8 text-center text-text-muted text-[10px] uppercase font-bold tracking-wider">Empty Directory</div>
             </Show>
 
             <Show when={!loading()}>
               <For each={files()}>
                 {(item) => (
                   <div 
-                    class="group flex justify-between items-center px-2 py-1.5 rounded-lg text-sm hover:bg-white/5 cursor-pointer border border-transparent hover:border-white/5 transition-all"
+                    class="group flex justify-between items-center px-2 py-1 rounded text-xs hover:bg-[#14161c] cursor-pointer transition-all"
                     onDblClick={() => {
                       if (item.is_dir) {
                         const parent = currentPath() === "/" ? "" : currentPath();
@@ -333,22 +451,21 @@ export default function FileExplorerView(props: FileExplorerProps) {
                   >
                     <div class="flex items-center gap-2 truncate flex-1">
                       {item.is_dir ? (
-                        <Folder size={16} class="text-accent-cyan shrink-0" />
+                        <Folder size={13} class="text-accent-cyan shrink-0" />
                       ) : (
-                        <File size={16} class="text-text-secondary shrink-0" />
+                        <File size={13} class="text-text-secondary shrink-0" />
                       )}
-                      <span class="truncate font-mono text-xs">{item.name}</span>
+                      <span class="truncate text-[11px] text-text-primary">{item.name}</span>
                     </div>
                     
-                    {/* Delete actions (on hover) */}
                     <button 
-                      class="opacity-0 group-hover:opacity-100 p-1 text-text-muted hover:text-accent-danger transition-all duration-200"
+                      class="btn-secondary p-1"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteItem(item);
                       }}
                     >
-                      <Trash2 size={13} />
+                      <Trash2 class="text-accent-danger btn-secondary p-1" size={11} />
                     </button>
                   </div>
                 )}
@@ -361,12 +478,12 @@ export default function FileExplorerView(props: FileExplorerProps) {
         <div class="flex-1 flex flex-col glass-panel overflow-hidden h-full">
           {/* File Selected Placeholder */}
           <div 
-            class="flex-1 flex flex-col justify-center items-center text-center p-8"
+            class="flex-1 flex flex-col justify-center items-center text-center p-8 bg-[#040507]"
             style={{ display: activeFile() === null ? "flex" : "none" }}
           >
-            <FileText size={64} class="text-text-muted/20 mb-4" />
-            <h3 class="text-lg font-semibold text-text-secondary">No File Selected</h3>
-            <p class="text-sm text-text-muted mt-1 max-w-xs">Single-click a file in the directory browser to open it here for remote editing.</p>
+            <FileText size={48} class="text-text-muted/10 mb-3" />
+            <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider font-mono">No Active Resource</h3>
+            <p class="text-xs text-text-muted mt-1.5 max-w-xs">Double-click folders to navigate, single-click files to load into the text editor.</p>
           </div>
 
           {/* Active Editor Panel */}
@@ -380,57 +497,55 @@ export default function FileExplorerView(props: FileExplorerProps) {
               style={{ display: isBinary() ? "none" : "flex" }}
             >
               {/* Editor toolbar */}
-              <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+              <div class="p-3 border-b flex justify-between items-center bg-slate-950/20">
                 <div class="truncate flex-1 mr-4">
-                  <h4 class="font-mono text-xs font-semibold truncate text-accent-cyan">{activeFile()}</h4>
+                  <h4 class="font-mono text-xs font-bold truncate text-accent-cyan">{activeFile()}</h4>
                   <Show when={isEditorDirty()}>
-                    <span class="text-[10px] text-accent-warning font-semibold font-mono">● UNSAVED CHANGES</span>
+                    <span class="text-[9px] text-accent-warning font-bold font-mono uppercase">● Modified</span>
                   </Show>
                 </div>
-                <div class="flex items-center gap-4">
-                  <span class="text-xs text-text-muted">{saveStatus()}</span>
-                  <button class="btn-primary py-1.5 px-3 text-xs" onClick={saveFile}>
-                    <Save size={14} /> Save File
+                <div class="flex items-center gap-3 shrink-0">
+                  <span class="text-xs text-text-muted font-mono">{saveStatus()}</span>
+                  <button class="btn-primary py-1 px-3 text-xs" onClick={saveFile}>
+                    <Save size={12} /> Save File
                   </button>
                 </div>
               </div>
 
               {/* CodeMirror element mount */}
-              <div ref={editorContainer} class="flex-1 overflow-auto font-mono text-sm bg-[#080c14]" />
+              <div ref={editorContainer} class="flex-1 overflow-auto font-mono text-xs bg-[#040507]" />
             </div>
 
             {/* Binary File Metadata Panel (shown when binary) */}
             <Show when={isBinary()}>
-              <div class="flex-1 flex flex-col justify-center items-center text-center p-8 bg-[#080c14]">
-                <File size={64} class="text-accent-indigo/40 mb-4 animate-pulse" />
-                <h3 class="text-lg font-semibold text-text-secondary truncate max-w-md">{activeFile()?.split('/').pop()}</h3>
-                <p class="text-xs text-text-muted mt-2">Binary file editing is not supported to prevent file corruption.</p>
-                <div class="mt-6 glass-panel p-4 max-w-sm w-full text-left space-y-2 text-xs font-mono">
-                  <div class="flex justify-between"><span class="text-text-muted">Path:</span> <span class="truncate max-w-[200px]" title={activeFile()!}>{activeFile()}</span></div>
-                  <div class="flex justify-between"><span class="text-text-muted">Size:</span> <span>{(binaryMetadata()?.size || 0).toLocaleString()} bytes</span></div>
-                  <div class="flex justify-between"><span class="text-text-muted">Type:</span> <span>Binary Resource</span></div>
+              <div class="flex-1 flex flex-col justify-center items-center text-center p-6 bg-[#040507]">
+                <File size={48} class="text-accent-indigo/20 mb-3 animate-pulse" />
+                <h3 class="text-xs font-bold font-mono text-text-secondary truncate max-w-md uppercase">BINARY FILE: {activeFile()?.split('/').pop()}</h3>
+                <p class="text-xs text-text-muted mt-1.5">Direct editor viewing is disabled for binary assets.</p>
+                <div class="mt-4 bg-dark-panel border p-3 max-w-xs w-full text-left space-y-1.5 text-xs font-mono">
+                  <div class="flex justify-between"><span class="text-text-muted">Size:</span> <span>{(binaryMetadata()?.size || 0).toLocaleString()} B</span></div>
                   <div class="flex justify-between"><span class="text-text-muted">Modified:</span> <span>{binaryMetadata()?.modified ? new Date(binaryMetadata()!.modified * 1000).toLocaleString() : "Unknown"}</span></div>
-                  <div class="flex justify-between"><span class="text-text-muted">Permissions:</span> <span>{binaryMetadata()?.permissions}</span></div>
+                  <div class="flex justify-between"><span class="text-text-muted">Mode:</span> <span>{binaryMetadata()?.permissions}</span></div>
                 </div>
               </div>
             </Show>
 
             {/* Visual Permissions toolbar */}
-            <div class="p-3 border-t border-white/5 bg-slate-950/40 flex flex-wrap justify-between items-center gap-3 text-xs">
-              <div class="flex items-center gap-2 text-text-secondary">
-                <Lock size={14} class="text-accent-indigo" />
-                <span>Current permissions: <strong class="font-mono text-text-primary">{activeFilePermissions()}</strong></span>
+            <div class="p-2 border-t bg-[#0c0d10] flex flex-wrap justify-between items-center gap-2 text-xs">
+              <div class="flex items-center gap-1.5 text-text-secondary">
+                <Lock size={12} class="text-accent-indigo" />
+                <span>Permissions: <strong class="font-mono text-text-primary">{activeFilePermissions()}</strong></span>
               </div>
-              <div class="flex items-center gap-2">
-                <span class="text-text-muted">Chmod:</span>
+              <div class="flex items-center gap-1.5">
+                <span class="text-text-muted font-mono">Mode:</span>
                 <input
                   type="text"
                   value={activeFileChmod()}
                   onInput={(e) => setActiveFileChmod(e.currentTarget.value)}
-                  class="w-16 text-center py-1 px-2 border border-white/10 rounded font-mono"
+                  class="w-12 text-center py-0.5 px-1 font-mono text-xs"
                   maxLength={4}
                 />
-                <button class="btn-secondary py-1 px-3" onClick={applyPermissions}>Apply</button>
+                <button class="btn-secondary py-0.5 px-2 text-xs" onClick={applyPermissions}>Chmod</button>
               </div>
             </div>
           </div>

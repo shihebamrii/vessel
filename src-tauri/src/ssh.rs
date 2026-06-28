@@ -11,6 +11,16 @@ pub fn shell_escape(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
+pub fn validate_path(path: &str) -> Result<(), String> {
+    if path.contains('\0') {
+        return Err("Invalid path: contains null byte".to_string());
+    }
+    if path.contains('\n') || path.contains('\r') {
+        return Err("Invalid path: contains newline characters".to_string());
+    }
+    Ok(())
+}
+
 pub fn wrap_sudo(command: &str, password: Option<&str>) -> String {
     if let Some(pass) = password {
         let escaped_pass = shell_escape(pass);
@@ -248,6 +258,9 @@ pub fn disconnect_session(server_id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn execute_command(server_id: String, command: String) -> Result<CommandResult, String> {
+    if command.contains('\0') {
+        return Err("Command contains null byte".to_string());
+    }
     let handle_arc = {
         let sessions = get_sessions().lock().unwrap();
         sessions.get(&server_id).cloned()
@@ -311,6 +324,7 @@ pub async fn write_remote_file(
     path: String,
     base64_content: String,
 ) -> Result<(), String> {
+    validate_path(&path)?;
     let path_buf = std::path::Path::new(&path);
     let parent = path_buf.parent()
         .map(|p| p.to_string_lossy().into_owned())
@@ -374,6 +388,7 @@ pub async fn write_remote_file(
 
 #[tauri::command]
 pub async fn read_remote_file(server_id: String, path: String) -> Result<String, String> {
+    validate_path(&path)?;
     let escaped_path = shell_escape(&path);
     let cmd = format!("base64 {}", escaped_path);
 
@@ -543,6 +558,7 @@ pub struct FileInfo {
 
 #[tauri::command]
 pub async fn list_directory(server_id: String, path: String) -> Result<Vec<FileInfo>, String> {
+    validate_path(&path)?;
     let escaped_path = shell_escape(&path);
     
     let stat_script = format!(
@@ -589,6 +605,7 @@ pub async fn list_directory(server_id: String, path: String) -> Result<Vec<FileI
 
 #[tauri::command]
 pub async fn chmod_file(server_id: String, path: String, mode: String) -> Result<(), String> {
+    validate_path(&path)?;
     if !mode.chars().all(|c| c.is_digit(8)) || mode.is_empty() || mode.len() > 4 {
         return Err("Invalid permissions mode format".to_string());
     }
@@ -602,6 +619,7 @@ pub async fn chmod_file(server_id: String, path: String, mode: String) -> Result
 
 #[tauri::command]
 pub async fn create_directory(server_id: String, path: String) -> Result<(), String> {
+    validate_path(&path)?;
     let cmd = format!("mkdir -p {}", shell_escape(&path));
     let res = execute_command(server_id, cmd).await?;
     if res.exit_code != 0 {
@@ -612,6 +630,7 @@ pub async fn create_directory(server_id: String, path: String) -> Result<(), Str
 
 #[tauri::command]
 pub async fn delete_file_or_directory(server_id: String, path: String, is_dir: bool) -> Result<(), String> {
+    validate_path(&path)?;
     let cmd = if is_dir {
         format!("rm -rf {}", shell_escape(&path))
     } else {

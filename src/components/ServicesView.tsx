@@ -1,6 +1,6 @@
 import { createSignal, createEffect, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { RotateCw, Play, Square, FileText, Activity, Loader, AlertTriangle } from "lucide-solid";
+import { RotateCw, Play, Square, FileText, Activity, Loader, AlertTriangle, Terminal } from "lucide-solid";
 
 interface ServicesProps {
   serverId: string;
@@ -23,7 +23,6 @@ export default function ServicesView(props: ServicesProps) {
   const [serviceLogs, setServiceLogs] = createSignal("");
   const [errorMsg, setErrorMsg] = createSignal("");
 
-
   // Poll systemd services list
   const fetchServices = async () => {
     setLoading(true);
@@ -42,7 +41,6 @@ export default function ServicesView(props: ServicesProps) {
       for (const line of res.stdout.split("\n")) {
         const parts = line.trim().split(/\s+/);
         if (parts.length >= 5 && parts[0].endsWith(".service")) {
-          // Reconstruct description from index 4 onwards
           const description = parts.slice(4).join(" ");
           list.push({
             name: parts[0],
@@ -69,6 +67,9 @@ export default function ServicesView(props: ServicesProps) {
       await invoke("control_service", { serverId: props.serverId, serviceName, action });
       props.showToast(`Service ${serviceName} ${action}ed successfully!`, "success");
       fetchServices();
+      if (selectedService() === serviceName) {
+        fetchLogs(serviceName);
+      }
     } catch (e: any) {
       props.showToast(`Error: ${e.toString()}`, "error");
       fetchServices();
@@ -78,8 +79,7 @@ export default function ServicesView(props: ServicesProps) {
   // Fetch log buffer from journalctl
   const fetchLogs = async (serviceName: string) => {
     setSelectedService(serviceName);
-
-    setServiceLogs("Fetching logs...");
+    setServiceLogs("Fetching logs from journalctl...");
     try {
       const logs: string = await invoke("get_service_logs", { serverId: props.serverId, serviceName });
       setServiceLogs(logs || "No logs available.");
@@ -89,13 +89,11 @@ export default function ServicesView(props: ServicesProps) {
     }
   };
 
-  // Load services on mount or serverId change
   createEffect(() => {
     props.serverId; // Track serverId change
     fetchServices();
   });
 
-  // Filter service names
   const filteredServices = () => {
     return services().filter((s) => 
       s.name.toLowerCase().includes(filterQuery().toLowerCase()) ||
@@ -104,114 +102,107 @@ export default function ServicesView(props: ServicesProps) {
   };
 
   return (
-    <div class="h-full flex flex-col" style={{ height: "calc(100vh - 120px)" }}>
-      <div class="mb-4 flex flex-wrap justify-between items-center gap-3">
-        <div class="flex items-center gap-2">
-          <Activity class="text-accent-cyan" size={22} />
-          <h2 class="text-xl font-semibold">Service Supervisor</h2>
+    <div class="h-full flex flex-col min-h-0" style={{ height: "calc(100vh - 120px)" }}>
+      <div class="mb-3 flex flex-wrap justify-between items-center gap-2 pb-2 border-b">
+        <div class="flex items-center gap-1.5">
+          <Activity class="text-accent-cyan" size={13} />
+          <h2 class="text-xs font-bold uppercase tracking-wider font-mono">SERVICE SUPERVISOR // SYSTEMD</h2>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 shrink-0">
           <input
             type="text"
             placeholder="Filter services..."
             value={filterQuery()}
             onInput={(e) => setFilterQuery(e.currentTarget.value)}
-            class="text-xs max-w-xs"
+            class="text-xs py-1 w-40 font-mono"
           />
-          <button class="btn-secondary text-xs" onClick={fetchServices}>
-            <RotateCw size={14} /> Refresh
+          <button class="btn-secondary text-xs py-1" onClick={fetchServices}>
+            <RotateCw size={12} /> Refresh
           </button>
         </div>
       </div>
 
       <Show when={errorMsg()}>
-        <div class="glass-panel p-4 mb-4 border-accent-danger bg-red-950/20 text-accent-danger text-xs flex gap-2">
-          <AlertTriangle size={16} class="shrink-0" />
+        <div class="glass-panel p-3 mb-3 border-accent-danger bg-red-950/20 text-accent-danger text-xs flex gap-2">
+          <AlertTriangle size={13} class="shrink-0" />
           <span>{errorMsg()}</span>
         </div>
       </Show>
 
-      <div class="flex-1 flex gap-6 overflow-hidden">
+      <div class="split-pane">
         {/* Left Side: Services List Table */}
-        <div class="flex-1 glass-panel p-4 overflow-hidden h-full flex flex-col">
+        <div class="split-pane-main glass-panel p-3 overflow-hidden h-full">
           <div class="flex-1 overflow-auto pr-1">
-            <table class="w-full text-left text-xs border-collapse">
+            <table class="dense-table">
               <thead>
-                <tr class="border-b border-white/5 text-text-muted font-semibold">
-                  <th class="pb-2 w-1/3">Service</th>
-                  <th class="pb-2">Status</th>
-                  <th class="pb-2 w-1/3">Description</th>
-                  <th class="pb-2 text-right">Actions</th>
+                <tr>
+                  <th class="text-left w-1/3">Service</th>
+                  <th class="text-left">Status</th>
+                  <th class="text-left w-1/3">Description</th>
+                  <th class="text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-white/5 font-mono">
+              <tbody>
                 <Show when={loading() && services().length === 0}>
                   <tr>
                     <td colspan="4" class="py-8 text-center text-text-secondary">
-                      <Loader class="animate-spin inline mr-2 text-accent-cyan" size={14} /> Loading services...
+                      <Loader class="animate-spin inline mr-1.5 text-accent-cyan" size={12} /> Reading systemd states...
                     </td>
                   </tr>
                 </Show>
 
                 <Show when={!loading() && filteredServices().length === 0}>
                   <tr>
-                    <td colspan="4" class="py-8 text-center text-text-muted">No services matching query.</td>
+                    <td colspan="4" class="py-8 text-center text-text-muted uppercase font-bold tracking-wider text-[10px]">No Services Found</td>
                   </tr>
                 </Show>
 
                 <For each={filteredServices()}>
                   {(service) => (
-                    <tr class="hover:bg-white/5 transition-colors">
-                      <td class="py-3 font-semibold text-text-primary truncate max-w-xs pr-4">
+                    <tr class={selectedService() === service.name ? "active" : ""}>
+                      <td class="font-semibold text-text-primary truncate max-w-xs">
                         {service.name.replace(".service", "")}
                       </td>
-                      <td class="py-3">
-                        <span 
-                          class={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            service.sub === "running" 
-                              ? "bg-accent-success/15 text-accent-success" 
-                              : service.active === "active" 
-                              ? "bg-accent-indigo/15 text-accent-indigo" 
-                              : "bg-white/5 text-text-muted"
-                          }`}
-                        >
-                          {service.sub}
+                      <td>
+                        <span class="flex items-center gap-1.5">
+                          <span class={`status-dot shrink-0 ${service.sub === "running" ? "active" : service.active === "active" ? "inactive" : "error"}`} />
+                          <span class="uppercase text-[9px] font-bold text-text-secondary font-mono">{service.sub}</span>
                         </span>
                       </td>
-                      <td class="py-3 text-text-secondary truncate max-w-xs pr-4" title={service.description}>
+                      <td class="text-text-secondary truncate max-w-xs" title={service.description}>
                         {service.description}
                       </td>
-                      <td class="py-3 text-right space-x-1 shrink-0">
+                      <td class="text-right space-x-1">
                         {service.sub === "running" ? (
                           <button 
-                            class="p-1 text-text-muted hover:text-accent-danger bg-white/5 rounded"
+                            class="btn-secondary p-1"
                             onClick={() => handleServiceAction(service.name, "stop")}
                             title="Stop Service"
                           >
-                            <Square size={12} />
+                            <Square size={11} class="text-accent-danger" />
                           </button>
                         ) : (
                           <button 
-                            class="p-1 text-text-muted hover:text-accent-success bg-white/5 rounded"
+                            class="btn-secondary p-1"
                             onClick={() => handleServiceAction(service.name, "start")}
                             title="Start Service"
                           >
-                            <Play size={12} />
+                            <Play size={11} class="text-accent-success" />
                           </button>
                         )}
                         <button 
-                          class="p-1 text-text-muted hover:text-accent-warning bg-white/5 rounded"
+                          class="btn-secondary p-1"
                           onClick={() => handleServiceAction(service.name, "restart")}
                           title="Restart Service"
                         >
-                          <RotateCw size={12} />
+                          <RotateCw size={11} class="text-accent-warning" />
                         </button>
                         <button 
-                          class="p-1 text-text-muted hover:text-accent-cyan bg-white/5 rounded"
+                          class="btn-secondary p-1"
                           onClick={() => fetchLogs(service.name)}
                           title="View Logs"
                         >
-                          <FileText size={12} />
+                          <FileText size={11} class="text-accent-cyan" />
                         </button>
                       </td>
                     </tr>
@@ -222,23 +213,34 @@ export default function ServicesView(props: ServicesProps) {
           </div>
         </div>
 
-        {/* Right Side: Log display Panel */}
-        <Show when={selectedService()}>
-          <div class="w-1/3 glass-panel p-4 flex flex-col h-full overflow-hidden">
-            <div class="mb-3 flex justify-between items-center">
-              <h3 class="font-semibold text-sm truncate text-accent-cyan">{selectedService()?.replace(".service", "")} Logs</h3>
-              <button 
-                class="text-xs text-text-muted hover:text-text-primary"
-                onClick={() => fetchLogs(selectedService()!)}
-              >
-                Refresh
-              </button>
+        {/* Right Side: Log Observer Panel */}
+        <div class="split-pane-side h-full">
+          <div class="console-panel">
+            <div class="console-header flex items-center justify-between">
+              <span class="text-[10px] font-bold font-mono text-text-primary uppercase flex items-center gap-1.5">
+                <Terminal size={12} class="text-accent-cyan" /> 
+                {selectedService() ? `${selectedService()?.replace(".service", "")}.log` : "TELEMETRY.log"}
+              </span>
+              <Show when={selectedService()}>
+                <button 
+                  class="btn-secondary text-[10px] py-0.5 px-2 font-mono uppercase"
+                  onClick={() => fetchLogs(selectedService()!)}
+                >
+                  Fetch
+                </button>
+              </Show>
             </div>
-            <div class="flex-1 p-3 rounded-lg bg-dark-panel border border-white/5 font-mono text-[10px] leading-relaxed overflow-auto select-text whitespace-pre-wrap text-slate-300">
-              {serviceLogs()}
+            <div class="console-body">
+              <Show when={selectedService()} fallback={
+                <div class="text-center py-12 text-text-muted uppercase font-bold text-[10px] tracking-wider">
+                  Select a service to inspect journalctl console output
+                </div>
+              }>
+                {serviceLogs()}
+              </Show>
             </div>
           </div>
-        </Show>
+        </div>
       </div>
     </div>
   );

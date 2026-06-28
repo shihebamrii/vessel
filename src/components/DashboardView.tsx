@@ -89,8 +89,6 @@ export default function DashboardView(props: DashboardProps) {
         const idle = cpuParts[3] || 0;
         const total = cpuParts.reduce((a, b) => a + b, 0);
         
-        // Quick approximate CPU percentage
-        // In a true implementation, we compare this poll's state with the previous poll's state.
         const prev = cpuHistory.get(props.serverId) || { total: 0, idle: 0 };
         const prevTotal = prev.total;
         const prevIdle = prev.idle;
@@ -119,7 +117,6 @@ export default function DashboardView(props: DashboardProps) {
     }
   };
 
-  // Trigger fetch immediately on mount or serverId change, then poll
   createEffect(() => {
     props.serverId; // Track serverId change explicitly
     active = true;
@@ -135,87 +132,139 @@ export default function DashboardView(props: DashboardProps) {
     if (timerId) clearTimeout(timerId);
   });
 
+  // Visual helper to generate terminal-like progress indicators: [████░░░░]
+  const renderVisualBar = (pct: number, activeClass: string) => {
+    const barsCount = 20;
+    const filled = Math.round((pct / 100) * barsCount);
+    
+    let filledStr = "";
+    for (let i = 0; i < filled; i++) {
+      filledStr += "█";
+    }
+    
+    let unfilledStr = "";
+    for (let i = filled; i < barsCount; i++) {
+      unfilledStr += "░";
+    }
+    
+    return (
+      <span class="font-mono text-xs select-none">
+        <span class={activeClass}>{filledStr}</span>
+        <span class="text-text-muted opacity-25">{unfilledStr}</span>
+      </span>
+    );
+  };
+
   return (
-    <div class="dashboard-view">
-      <div class="mb-6 flex justify-between items-center">
+    <div class="dashboard-view flex-1 flex flex-col min-h-0">
+      <div class="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-white/5">
         <div>
-          <h2 class="text-2xl font-semibold flex items-center gap-2">
-            <Server class="text-accent-cyan" size={24} /> {hostname()}
+          <h2 class="text-sm font-bold flex items-center gap-2 uppercase font-mono">
+            <Server class="text-accent-cyan" size={14} /> SYSTEM HOSTNAME: {hostname()}
           </h2>
-          <p class="text-sm text-text-secondary mt-1">{osRelease()}</p>
+          <p class="text-xs text-text-secondary font-mono mt-0.5">{osRelease()}</p>
         </div>
-        <div class="glass-panel px-4 py-2 flex items-center gap-2 text-sm text-text-secondary">
-          <Clock size={16} class="text-accent-indigo" />
-          <span>Uptime: <strong class="text-text-primary">{uptime()}</strong></span>
+        <div class="bg-dark-panel border px-3 py-1.5 flex items-center gap-2 text-xs font-mono">
+          <Clock size={13} class="text-accent-indigo" />
+          <span>UPTIME: <strong class="text-text-primary">{uptime()}</strong></span>
         </div>
       </div>
 
       {errorMsg() && (
-        <div class="glass-panel p-4 mb-6 border-accent-danger bg-red-950/20 text-accent-danger text-sm flex items-center gap-2">
+        <div class="glass-panel p-3 mb-4 border-accent-danger bg-red-950/20 text-accent-danger text-xs flex items-center gap-2">
           <span>⚠️ {errorMsg()}</span>
         </div>
       )}
 
       {/* Grid Layout of indicators */}
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {/* CPU Panel */}
-        <div class="glass-panel p-6 flex flex-col justify-between">
-          <div class="flex justify-between items-start mb-4">
+        <div class="glass-panel p-4 flex flex-col justify-between">
+          <div class="flex justify-between items-start mb-3">
             <div>
-              <p class="text-sm font-semibold text-text-secondary">CPU Usage</p>
-              <h3 class="text-3xl font-bold mt-1 text-text-primary">{cpuUsage()}%</h3>
+              <p class="text-xs font-bold text-text-secondary uppercase font-mono">CPU Core Load</p>
+              <h3 class="text-xl font-bold mt-1 text-text-primary font-mono">{cpuUsage()}%</h3>
             </div>
-            <div class="p-3 rounded-lg bg-accent-cyan/10 text-accent-cyan">
-              <Cpu size={24} />
+            <div class="text-accent-cyan shrink-0 flex items-center">
+              <Cpu size={14} />
             </div>
           </div>
-          <div class="w-full bg-slate-800/80 h-2.5 rounded-full overflow-hidden">
-            <div 
-              class="h-full bg-gradient-to-r from-accent-cyan to-accent-indigo transition-all duration-500"
-              style={{ width: `${cpuUsage()}%` }}
-            />
+          <div class="mt-2 flex justify-between items-center bg-[#040507] border p-2 rounded-sm">
+            {renderVisualBar(cpuUsage(), "text-accent-cyan")}
+            <span class="text-accent-cyan font-mono text-xs font-semibold">{cpuUsage()}%</span>
           </div>
         </div>
 
         {/* Memory Panel */}
-        <div class="glass-panel p-6 flex flex-col justify-between">
-          <div class="flex justify-between items-start mb-4">
+        <div class="glass-panel p-4 flex flex-col justify-between">
+          <div class="flex justify-between items-start mb-3">
             <div>
-              <p class="text-sm font-semibold text-text-secondary">Memory Usage</p>
-              <h3 class="text-3xl font-bold mt-1 text-text-primary">
-                {memUsed()} <span class="text-lg font-normal text-text-muted">/ {memTotal()} MB</span>
+              <p class="text-xs font-bold text-text-secondary uppercase font-mono">Physical RAM</p>
+              <h3 class="text-xl font-bold mt-1 text-text-primary font-mono">
+                {memUsed()} <span class="text-xs font-normal text-text-muted">/ {memTotal()} MB</span>
               </h3>
             </div>
-            <div class="p-3 rounded-lg bg-accent-indigo/10 text-accent-indigo">
-              <MemIcon size={24} />
+            <div class="text-accent-indigo shrink-0 flex items-center">
+              <MemIcon size={14} />
             </div>
           </div>
-          <div class="w-full bg-slate-800/80 h-2.5 rounded-full overflow-hidden">
-            <div 
-              class="h-full bg-gradient-to-r from-accent-indigo to-accent-purple transition-all duration-500"
-              style={{ width: `${memTotal() > 0 ? (memUsed() / memTotal()) * 100 : 0}%` }}
-            />
+          <div class="mt-2 flex justify-between items-center bg-[#040507] border p-2 rounded-sm">
+            {renderVisualBar(memTotal() > 0 ? (memUsed() / memTotal()) * 100 : 0, "text-accent-indigo")}
+            <span class="text-accent-indigo font-mono text-xs font-semibold">
+              {memTotal() > 0 ? Math.round((memUsed() / memTotal()) * 100) : 0}%
+            </span>
           </div>
         </div>
 
         {/* Disk Panel */}
-        <div class="glass-panel p-6 flex flex-col justify-between">
-          <div class="flex justify-between items-start mb-4">
+        <div class="glass-panel p-4 flex flex-col justify-between">
+          <div class="flex justify-between items-start mb-3">
             <div>
-              <p class="text-sm font-semibold text-text-secondary">Disk Usage (Root)</p>
-              <h3 class="text-3xl font-bold mt-1 text-text-primary">
-                {diskUsed()} <span class="text-lg font-normal text-text-muted">/ {diskTotal()}</span>
+              <p class="text-xs font-bold text-text-secondary uppercase font-mono">Storage Root (df /)</p>
+              <h3 class="text-xl font-bold mt-1 text-text-primary font-mono">
+                {diskUsed()} <span class="text-xs font-normal text-text-muted">/ {diskTotal()}</span>
               </h3>
             </div>
-            <div class="p-3 rounded-lg bg-accent-purple/10 text-accent-purple">
-              <HardDrive size={24} />
+            <div class="text-accent-purple shrink-0 flex items-center">
+              <HardDrive size={14} />
             </div>
           </div>
-          <div class="w-full bg-slate-800/80 h-2.5 rounded-full overflow-hidden">
-            <div 
-              class="h-full bg-gradient-to-r from-accent-purple to-pink-500 transition-all duration-500"
-              style={{ width: `${diskPercent()}%` }}
-            />
+          <div class="mt-2 flex justify-between items-center bg-[#040507] border p-2 rounded-sm">
+            {renderVisualBar(diskPercent(), "text-accent-purple")}
+            <span class="text-accent-purple font-mono text-xs font-semibold">{diskPercent()}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Detailed Technical Inventory */}
+      <div class="glass-panel p-4 flex-1 overflow-y-auto">
+        <h4 class="text-[10px] uppercase font-bold text-text-secondary tracking-wider font-mono mb-3 pb-1 border-b">
+          SYSTEM TELEMETRY SUMMARY
+        </h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 font-mono text-xs">
+          <div class="telemetry-item">
+            <span class="telemetry-label">Hostname</span>
+            <span class="telemetry-value">{hostname()}</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">OS Kernel Release</span>
+            <span class="telemetry-value">{osRelease()}</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Total Allocated RAM</span>
+            <span class="telemetry-value">{memTotal()} MB</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Free RAM Space</span>
+            <span class="telemetry-value">{memTotal() - memUsed()} MB</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Mount Storage Capacity</span>
+            <span class="telemetry-value">{diskTotal()}</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Mount Storage Utilized</span>
+            <span class="telemetry-value">{diskUsed()} ({diskPercent()}%)</span>
           </div>
         </div>
       </div>

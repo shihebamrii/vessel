@@ -2,7 +2,7 @@ import { createSignal, onMount, For, Show, ErrorBoundary } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
-import { Plus, Trash2, Settings, Server, Power, LogOut, Terminal, Folder, Activity, Cpu, Play, ShieldAlert, Key } from "lucide-solid";
+import { Plus, Trash2, Settings, Server, Power, LogOut, Terminal, Folder, Activity, Cpu, Play, ShieldAlert, Key, Loader } from "lucide-solid";
 import DashboardView from "./components/DashboardView";
 import TerminalView from "./components/TerminalView";
 import FileExplorerView from "./components/FileExplorerView";
@@ -280,30 +280,28 @@ export default function App() {
     <div class="app-container">
       {/* Sidebar Workspace */}
       <div class="sidebar">
-        <div class="flex items-center gap-3 mb-6">
-          <div class="p-2 bg-gradient-to-tr from-accent-cyan to-accent-indigo rounded-lg text-[#0b0f19]">
-            <Server size={20} />
-          </div>
-          <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-accent-cyan to-accent-indigo bg-clip-text text-transparent">
-            Vessel
+        <div class="flex items-center gap-2 mb-4 pb-2 border-b">
+          <Server size={14} class="text-accent-cyan" />
+          <h1 class="text-xs font-bold tracking-wider font-mono uppercase text-text-primary">
+            VESSEL // VPS
           </h1>
         </div>
 
-        <div class="mb-4">
+        <div class="mb-3">
           <button 
-            class="btn-primary w-full text-xs py-2"
+            class="btn-secondary w-full py-1.5 text-xs flex justify-center items-center gap-1.5"
             onClick={() => {
               setSelectedProfileId(null);
               setShowForm(true);
             }}
           >
-            <Plus size={14} /> Add Server
+            <Plus size={12} /> Add Server
           </button>
         </div>
 
         {/* Server Profiles list */}
-        <div class="flex-1 overflow-y-auto mb-6 pr-1">
-          <p class="text-[10px] uppercase font-bold text-text-muted mb-2 tracking-wider">Servers</p>
+        <div class="flex-1 overflow-y-auto mb-4 pr-1">
+          <p class="text-[9px] uppercase font-bold text-text-muted mb-2 tracking-wider font-mono">Server Catalog</p>
           <For each={profiles()}>
             {(profile) => (
               <div 
@@ -314,18 +312,19 @@ export default function App() {
                 }}
               >
                 <div class="flex items-center gap-2 truncate">
-                  <Server size={14} class={activeServerId() === profile.id ? "text-accent-cyan" : "text-text-muted"} />
+                  <span class={`status-dot shrink-0 ${activeServerId() === profile.id ? "active animate-pulse" : "inactive"}`} />
                   <div class="truncate text-left">
                     <p class="text-xs font-semibold text-text-primary truncate">{profile.name}</p>
-                    <p class="text-[10px] text-text-muted truncate">{profile.host}</p>
+                    <p class="text-[10px] text-text-muted font-mono truncate">{profile.host}</p>
                   </div>
                 </div>
                 
                 <button 
-                  class="opacity-0 group-hover:opacity-100 p-1 text-text-muted hover:text-accent-danger transition-all duration-200"
+                  class="btn-secondary p-1"
                   onClick={(e) => handleDeleteProfile(profile.id, e)}
+                  title="Remove Server"
                 >
-                  <Trash2 size={12} />
+                  <Trash2 size={11} />
                 </button>
               </div>
             )}
@@ -334,43 +333,43 @@ export default function App() {
 
         {/* Navigation Selector Tabs (when connected) */}
         <Show when={connectionState() === "connected"}>
-          <div class="border-t border-white/5 pt-4 space-y-1">
-            <p class="text-[10px] uppercase font-bold text-text-muted mb-2 tracking-wider">Control Panel</p>
+          <div class="border-t border-white/5 pt-3 space-y-1">
+            <p class="text-[9px] uppercase font-bold text-text-muted mb-2 tracking-wider font-mono">Control plane</p>
             <button 
               class={`tab-button ${activeTab() === "dashboard" ? "active" : ""}`}
               onClick={() => setActiveTab("dashboard")}
             >
-              <Cpu size={15} /> Dashboard
+              <Cpu size={13} /> Dashboard
             </button>
             <button 
               class={`tab-button ${activeTab() === "explorer" ? "active" : ""}`}
               onClick={() => setActiveTab("explorer")}
             >
-              <Folder size={15} /> File Explorer
+              <Folder size={13} /> File Explorer
             </button>
             <button 
               class={`tab-button ${activeTab() === "terminal" ? "active" : ""}`}
               onClick={() => setActiveTab("terminal")}
             >
-              <Terminal size={15} /> Terminal
+              <Terminal size={13} /> Terminal
             </button>
             <button 
               class={`tab-button ${activeTab() === "services" ? "active" : ""}`}
               onClick={() => setActiveTab("services")}
             >
-              <Activity size={15} /> Services
+              <Activity size={13} /> Services
             </button>
             <button 
               class={`tab-button ${activeTab() === "docker" ? "active" : ""}`}
               onClick={() => setActiveTab("docker")}
             >
-              <Play size={15} /> Docker
+              <Play size={13} /> Docker Containers
             </button>
             <button 
               class={`tab-button ${activeTab() === "proxy" ? "active" : ""}`}
               onClick={() => setActiveTab("proxy")}
             >
-              <Settings size={15} /> Proxy Manager
+              <Settings size={13} /> Proxy Manager
             </button>
           </div>
         </Show>
@@ -379,7 +378,7 @@ export default function App() {
       {/* Main Workspace content */}
       <div class="main-content">
         {errorMessage() && (
-          <div class="glass-panel p-4 mb-6 border-accent-danger bg-red-950/20 text-accent-danger text-sm">
+          <div class="glass-panel p-3 mb-4 border-accent-danger bg-red-950/20 text-accent-danger text-xs">
             <span>⚠️ {errorMessage()}</span>
           </div>
         )}
@@ -387,56 +386,59 @@ export default function App() {
         {/* Dynamic component routing based on state */}
         <Show when={showForm() || profiles().length === 0}>
           {/* Create Server Form container */}
-          <div class="max-w-md mx-auto glass-panel p-6">
-            <h3 class="text-lg font-semibold mb-4 text-text-primary">Add Server Profile</h3>
-            <form onSubmit={handleAddProfile} class="space-y-4">
+          <div class="max-w-md mx-auto glass-panel p-5 mt-8">
+            <h3 class="text-sm font-semibold mb-3 pb-1.5 border-b text-text-primary uppercase tracking-wider font-mono">Add Server Profile</h3>
+            <form onSubmit={handleAddProfile} class="space-y-3">
               <div class="flex flex-col gap-1">
-                <label class="text-xs text-text-secondary font-medium">Profile Name</label>
+                <label class="text-[10px] text-text-secondary uppercase font-semibold font-mono">Profile Name</label>
                 <input
                   type="text"
-                  placeholder="Production Webserver"
+                  placeholder="e.g. Production API"
                   value={formName()}
                   onInput={(e) => setFormName(e.currentTarget.value)}
                   required
                 />
               </div>
-              <div class="grid grid-cols-3 gap-3">
+              <div class="grid grid-cols-3 gap-2">
                 <div class="col-span-2 flex flex-col gap-1" style={{ "grid-column": "span 2" }}>
-                  <label class="text-xs text-text-secondary font-medium">Host Address / IP</label>
+                  <label class="text-[10px] text-text-secondary uppercase font-semibold font-mono">Host / IP</label>
                   <input
                     type="text"
                     placeholder="192.168.1.100"
                     value={formHost()}
                     onInput={(e) => setFormHost(e.currentTarget.value)}
                     required
+                    class="font-mono text-xs"
                   />
                 </div>
                 <div class="flex flex-col gap-1">
-                  <label class="text-xs text-text-secondary font-medium">Port</label>
+                  <label class="text-[10px] text-text-secondary uppercase font-semibold font-mono">Port</label>
                   <input
                     type="number"
                     value={formPort()}
                     onInput={(e) => setFormPort(parseInt(e.currentTarget.value) || 22)}
                     required
+                    class="font-mono text-xs"
                   />
                 </div>
               </div>
               <div class="flex flex-col gap-1">
-                <label class="text-xs text-text-secondary font-medium">Username</label>
+                <label class="text-[10px] text-text-secondary uppercase font-semibold font-mono">Username</label>
                 <input
                   type="text"
                   placeholder="root"
                   value={formUsername()}
                   onInput={(e) => setFormUsername(e.currentTarget.value)}
                   required
+                  class="font-mono text-xs"
                 />
               </div>
               <div class="flex flex-col gap-1">
-                <label class="text-xs text-text-secondary font-medium">Authentication Type</label>
+                <label class="text-[10px] text-text-secondary uppercase font-semibold font-mono">Authentication Type</label>
                 <select
                   value={formAuthType()}
                   onChange={(e) => setFormAuthType(e.currentTarget.value as any)}
-                  class="w-full bg-slate-900/60 text-xs py-2 px-3 border rounded border-white/10"
+                  class="w-full text-xs py-1.5 px-3"
                 >
                   <option value="password">Password</option>
                   <option value="private_key">SSH Private Key</option>
@@ -444,7 +446,7 @@ export default function App() {
               </div>
 
               <div class="flex flex-col gap-1">
-                <label class="text-xs text-text-secondary font-medium">
+                <label class="text-[10px] text-text-secondary uppercase font-semibold font-mono">
                   {formAuthType() === "password" ? "Password" : "Private Key PEM String"}
                 </label>
                 {formAuthType() === "password" ? (
@@ -459,13 +461,13 @@ export default function App() {
                     placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
                     value={formSecret()}
                     onInput={(e) => setFormSecret(e.currentTarget.value)}
-                    class="h-32 bg-slate-900/60 border border-white/10 rounded p-2 text-xs font-mono text-slate-300 outline-none"
+                    class="h-28 text-xs font-mono"
                   />
                 )}
-                <p class="text-[9px] text-text-muted mt-1">Credentials will be stored securely in the native OS Keychain vault.</p>
+                <p class="text-[9px] text-text-muted mt-0.5">Credentials will be stored securely in the native OS Keychain vault.</p>
               </div>
 
-              <div class="pt-4 flex gap-3">
+              <div class="pt-3 flex gap-2">
                 <button type="submit" class="btn-primary flex-1">Save Profile</button>
                 <Show when={profiles().length > 0}>
                   <button 
@@ -483,25 +485,41 @@ export default function App() {
 
         <Show when={!showForm() && profiles().length > 0 && activeServerId() === null}>
           {/* Server details card (disconnected state) */}
-          <div class="max-w-md mx-auto glass-panel p-6 text-center">
-            <Server size={48} class="mx-auto text-accent-indigo mb-4" />
+          <div class="max-w-md mx-auto glass-panel p-5 mt-12">
+            <div class="text-center pb-4 mb-4 border-b">
+              <Server size={36} class="mx-auto text-text-secondary mb-2" />
+              <h3 class="text-sm font-semibold text-text-primary uppercase tracking-wider font-mono">Server Workspace</h3>
+            </div>
+            
             <For each={profiles()}>
               {(p) => (
                 <Show when={p.id === selectedProfileId() || selectedProfileId() === null}>
-                  <h3 class="text-xl font-semibold text-text-primary mb-1">{p.name}</h3>
-                  <p class="text-sm text-text-secondary font-mono mb-4">{p.username}@{p.host}:{p.port}</p>
+                  <div class="bg-dark-panel p-3 border rounded mb-4 font-mono text-xs">
+                    <div class="telemetry-item">
+                      <span class="telemetry-label">Alias</span>
+                      <span class="telemetry-value text-accent-cyan">{p.name}</span>
+                    </div>
+                    <div class="telemetry-item">
+                      <span class="telemetry-label">Socket</span>
+                      <span class="telemetry-value">{p.username}@{p.host}:{p.port}</span>
+                    </div>
+                    <div class="telemetry-item">
+                      <span class="telemetry-label">Auth Type</span>
+                      <span class="telemetry-value">{p.authType === "password" ? "password" : "private_key"}</span>
+                    </div>
+                  </div>
                   
-                  <div class="flex gap-3 justify-center">
+                  <div class="flex gap-2">
                     <button 
-                      class="btn-primary px-6" 
+                      class="btn-primary w-full py-2 flex items-center justify-center gap-1.5" 
                       onClick={() => handleConnect(p)}
                       disabled={connectionState() === "connecting"}
                     >
                       <Show when={connectionState() === "connecting"}>
-                        Connecting...
+                        <Loader size={12} class="animate-spin" /> Connecting...
                       </Show>
                       <Show when={connectionState() !== "connecting"}>
-                        <Power size={14} /> Connect Server
+                        <Power size={12} /> Connect Server
                       </Show>
                     </button>
                   </div>
@@ -513,22 +531,25 @@ export default function App() {
 
         <Show when={connectionState() === "connected" && activeServerId() !== null}>
           {/* Sub-component views linked to current selection */}
-          <div class="h-full flex flex-col">
-            <div class="flex justify-between items-center mb-6">
-              <span class="text-xs px-2 py-0.5 rounded-full bg-accent-success/10 text-accent-success border border-accent-success/20 font-semibold uppercase tracking-wider">
-                ● Connected
-              </span>
+          <div class="h-full flex flex-col min-h-0">
+            <div class="flex justify-between items-center mb-4 pb-2 border-b">
+              <div class="flex items-center gap-2">
+                <span class="status-dot active animate-pulse" />
+                <span class="text-xs font-mono uppercase tracking-wider text-text-secondary">
+                  CONNECTED // {profiles().find(p => p.id === activeServerId())?.username}@{profiles().find(p => p.id === activeServerId())?.host}
+                </span>
+              </div>
               <button 
-                class="btn-secondary text-xs px-3 py-1.5 flex items-center gap-2 hover:border-accent-danger hover:text-accent-danger" 
+                class="btn-secondary text-[11px] py-1 px-2.5 flex items-center gap-1.5 hover:border-accent-danger hover:text-accent-danger" 
                 onClick={handleDisconnect}
               >
-                <LogOut size={13} /> Disconnect
+                <LogOut size={11} /> Disconnect
               </button>
             </div>
 
             <ErrorBoundary fallback={(err) => (
-              <div class="glass-panel p-6 border-accent-danger bg-red-950/20 text-accent-danger">
-                <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">⚠️ Something went wrong</h3>
+              <div class="glass-panel p-4 border-accent-danger bg-red-950/20 text-accent-danger">
+                <h3 class="text-xs font-semibold mb-2 flex items-center gap-1.5 uppercase font-mono">⚠️ Telemetry Exception</h3>
                 <p class="text-xs font-mono select-text mb-4">{err.toString()}</p>
                 <button class="btn-secondary text-xs" onClick={() => window.location.reload()}>Reload App</button>
               </div>
@@ -559,11 +580,11 @@ export default function App() {
       {/* Password Prompt Modal */}
       <Show when={showPromptModal()}>
         <div class="modal-overlay flex items-center justify-center">
-          <div class="glass-panel p-6 max-w-md w-full mx-4">
-            <h3 class="text-lg font-semibold mb-4 text-text-primary">{promptModalTitle()}</h3>
-            <form onSubmit={handlePromptSubmit} class="space-y-4">
+          <div class="glass-panel p-5 max-w-sm w-full mx-4">
+            <h3 class="text-xs font-semibold mb-3 pb-1 text-text-primary uppercase tracking-wider font-mono border-b">{promptModalTitle()}</h3>
+            <form onSubmit={handlePromptSubmit} class="space-y-3">
               <div class="flex flex-col gap-1">
-                <label class="text-xs text-text-secondary font-medium">
+                <label class="text-[10px] text-text-secondary uppercase font-semibold font-mono">
                   {promptModalType() === "password" ? "Password" : "Private Key PEM String"}
                 </label>
                 {promptModalType() === "password" ? (
@@ -582,12 +603,12 @@ export default function App() {
                     value={promptModalSecret()}
                     onInput={(e) => setPromptModalSecret(e.currentTarget.value)}
                     required
-                    class="w-full h-32 bg-slate-900/60 border border-white/10 rounded p-2 text-xs font-mono text-slate-300 outline-none"
+                    class="w-full h-28 text-xs font-mono"
                     autofocus
                   />
                 )}
               </div>
-              <div class="pt-4 flex gap-3">
+              <div class="pt-2 flex gap-2">
                 <button type="submit" class="btn-primary flex-1">Connect</button>
                 <button 
                   type="button" 
@@ -608,38 +629,38 @@ export default function App() {
       {/* Host Key Confirmation Modal */}
       <Show when={showHostKeyModal() && pendingHostKey()}>
         <div class="modal-overlay flex items-center justify-center z-50">
-          <div class="glass-panel p-6 max-w-lg w-full mx-4 border-accent-cyan">
-            <h3 class="text-lg font-semibold mb-2 text-text-primary flex items-center gap-2">
-              <Show when={pendingHostKey()?.isMismatch} fallback={<span class="text-accent-cyan flex items-center gap-2"><Key size={18} /> New SSH Host Key</span>}>
-                <span class="text-accent-danger flex items-center gap-2"><ShieldAlert size={18} /> WARNING: Host Key Mismatch!</span>
+          <div class="glass-panel p-5 max-w-md w-full mx-4 border-accent-cyan">
+            <h3 class="text-xs font-semibold mb-2 text-text-primary flex items-center gap-1.5 uppercase font-mono">
+              <Show when={pendingHostKey()?.isMismatch} fallback={<span class="text-accent-cyan flex items-center gap-1.5"><Key size={14} /> New SSH Host Key</span>}>
+                <span class="text-accent-danger flex items-center gap-1.5"><ShieldAlert size={14} /> WARNING: Host Key Mismatch!</span>
               </Show>
             </h3>
             
-            <p class="text-xs text-text-secondary mb-4 leading-relaxed">
+            <p class="text-xs text-text-secondary mb-3 leading-normal">
               <Show when={pendingHostKey()?.isMismatch} fallback={
-                <>The server at <strong class="text-text-primary">{pendingHostKey()?.host}:{pendingHostKey()?.port}</strong> has presented a key fingerprint that is not in your database. Do you trust this key?</>
+                <>The server at <strong class="text-text-primary font-mono">{pendingHostKey()?.host}:{pendingHostKey()?.port}</strong> has presented a key fingerprint that is not in your database. Do you trust this key?</>
               }>
                 <>
-                  THE REMOTE HOST IDENTIFICATION FOR <strong>{pendingHostKey()?.host}:{pendingHostKey()?.port}</strong> HAS CHANGED! 
+                  THE REMOTE HOST IDENTIFICATION FOR <strong class="text-text-primary font-mono">{pendingHostKey()?.host}:{pendingHostKey()?.port}</strong> HAS CHANGED! 
                   This could indicate a Man-in-the-Middle attack or a legitimate server reinstall. Do you want to trust the new key?
                 </>
               </Show>
             </p>
 
-            <div class="bg-dark-panel p-3 rounded-lg border border-white/5 mb-4 text-xs font-mono break-all select-all text-slate-300">
-              <div class="text-[10px] text-text-secondary uppercase mb-1 font-semibold">SHA256 Fingerprint</div>
+            <div class="bg-dark-panel p-2 rounded border mb-3 text-xs font-mono break-all select-all text-slate-300">
+              <div class="text-[9px] text-text-secondary uppercase mb-1 font-semibold">SHA256 Fingerprint</div>
               {pendingHostKey()?.fingerprint}
             </div>
 
-            <div class="flex gap-3">
+            <div class="flex gap-2">
               <button 
-                class={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${pendingHostKey()?.isMismatch ? 'bg-accent-danger hover:bg-accent-danger/80 text-white' : 'btn-primary'}`} 
+                class={`flex-1 py-1.5 rounded font-medium transition-all text-xs ${pendingHostKey()?.isMismatch ? 'bg-accent-danger hover:bg-accent-danger/80 text-white' : 'btn-primary'}`} 
                 onClick={() => handleHostKeyConfirm(true)}
               >
                 Accept & Connect
               </button>
               <button 
-                class="btn-secondary flex-1" 
+                class="btn-secondary flex-1 py-1.5" 
                 onClick={() => handleHostKeyConfirm(false)}
               >
                 Reject / Cancel

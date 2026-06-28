@@ -45,22 +45,22 @@ export default function TerminalView(props: TerminalProps) {
     // Configure xterm
     term = new Terminal({
       theme: {
-        background: "#080c14",
-        foreground: "#f1f5f9",
-        cursor: "#38bdf8",
-        black: "#020617",
-        red: "#ef4444",
-        green: "#22c55e",
-        yellow: "#eab308",
-        blue: "#3b82f6",
-        magenta: "#a855f7",
-        cyan: "#06b6d4",
-        white: "#f8fafc",
+        background: "#040507",
+        foreground: "#f5f6f8",
+        cursor: "#0091ff",
+        black: "#07080a",
+        red: "#ff453a",
+        green: "#30d158",
+        yellow: "#ff9f0a",
+        blue: "#5856d6",
+        magenta: "#af52de",
+        cyan: "#0091ff",
+        white: "#f5f6f8",
       },
-      fontFamily: "Fira Code, SFMono-Regular, Consolas, monospace",
-      fontSize: 14,
+      fontFamily: "JetBrains Mono, Fira Code, Consolas, monospace",
+      fontSize: 13,
       cursorBlink: true,
-      lineHeight: 1.2,
+      lineHeight: 1.25,
     });
 
     fitAddon = new FitAddon();
@@ -130,20 +130,20 @@ export default function TerminalView(props: TerminalProps) {
 
   return (
     <div class="h-full flex flex-col">
-      <div class="mb-4 flex justify-between items-center">
+      <div class="mb-3 flex justify-between items-center pb-2 border-b">
         <div class="flex items-center gap-2">
-          <TermIcon class="text-accent-cyan" size={22} />
-          <h2 class="text-xl font-semibold">Interactive Shell</h2>
+          <TermIcon class="text-accent-cyan" size={13} />
+          <h2 class="text-xs font-bold uppercase tracking-wider font-mono">PTY TERMINAL // SSH CONNECTION</h2>
         </div>
-        <button class="btn-secondary px-3 py-1.5 text-sm" onClick={initTerminal}>
-          <RotateCcw size={14} /> Restart Session
+        <button class="btn-secondary px-2.5 py-1 text-xs" onClick={initTerminal}>
+          <RotateCcw size={11} /> Restart Session
         </button>
       </div>
       <div 
-        class="flex-1 w-full p-4 rounded-xl border border-white/5 bg-dark-panel overflow-hidden" 
-        style={{ height: "calc(100vh - 180px)" }}
+        class="flex-1 w-full p-2.5 rounded-sm border bg-[#040507] overflow-hidden" 
+        style={{ height: "calc(100vh - 160px)" }}
       >
-        <div ref={terminalContainer} class="w-full h-full" />
+        <div ref={terminalContainer} class="w-full h-full font-mono" />
       </div>
     </div>
   );
