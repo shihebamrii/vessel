@@ -16,6 +16,7 @@ export default function TerminalView(props: TerminalProps) {
   let term: Terminal | undefined;
   let fitAddon: FitAddon | undefined;
   let unlisten: (() => void) | undefined;
+  let resizeListener: (() => void) | undefined;
   let terminalId = `term-${props.serverId}-${Math.floor(Math.random() * 1000)}`;
 
   const initTerminal = async () => {
@@ -29,6 +30,16 @@ export default function TerminalView(props: TerminalProps) {
     if (unlisten) {
       unlisten();
       unlisten = undefined;
+    }
+    if (resizeListener) {
+      resizeListener();
+      resizeListener = undefined;
+    }
+
+    try {
+      await invoke("close_terminal_session", { terminalId });
+    } catch (err) {
+      console.warn("Failed to close old terminal session:", err);
     }
 
     // Configure xterm
@@ -97,9 +108,8 @@ export default function TerminalView(props: TerminalProps) {
         }
       };
       window.addEventListener("resize", handleResize);
-      // Trigger once after initialization to align sizes
       setTimeout(handleResize, 200);
-      onCleanup(() => window.removeEventListener("resize", handleResize));
+      resizeListener = () => window.removeEventListener("resize", handleResize);
 
     } catch (e: any) {
       term.write(`\r\nFailed to start terminal session: ${e.toString()}\r\n`);
@@ -114,6 +124,8 @@ export default function TerminalView(props: TerminalProps) {
   onCleanup(() => {
     if (term) term.dispose();
     if (unlisten) unlisten();
+    if (resizeListener) resizeListener();
+    invoke("close_terminal_session", { terminalId }).catch(console.error);
   });
 
   return (

@@ -11,6 +11,70 @@ pub fn shell_escape(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
+pub fn wrap_sudo(command: &str, password: Option<&str>) -> String {
+    if let Some(pass) = password {
+        let escaped_pass = shell_escape(pass);
+        command.replace("sudo ", &format!("echo {} | sudo -S -p '' ", escaped_pass))
+    } else {
+        command.to_string()
+    }
+}
+
+static KNOWN_HOSTS_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+fn get_known_hosts_lock() -> &'static tokio::sync::Mutex<()> {
+    KNOWN_HOSTS_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+fn read_known_hosts(path: &std::path::Path) -> HashMap<String, String> {
+    use std::fs::File;
+    use std::io::Read;
+    if path.exists() {
+        if let Ok(mut file) = File::open(path) {
+            let mut content = String::new();
+            if file.read_to_string(&mut content).is_ok() {
+                return serde_json::from_str(&content).unwrap_or_default();
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn write_known_hosts(path: &std::path::Path, known_hosts: &HashMap<String, String>) -> Result<(), std::io::Error> {
+    use std::fs::File;
+    use std::io::Write;
+    let json_data = serde_json::to_string_pretty(known_hosts)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let mut file = File::create(path)?;
+    file.write_all(json_data.as_bytes())?;
+    Ok(())
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct HostKeyConfirmPayload {
+    pub host: String,
+    pub port: u16,
+    pub fingerprint: String,
+    pub is_mismatch: bool,
+}
+
+static PENDING_CONFIRMATIONS: OnceLock<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>> = OnceLock::new();
+
+fn get_pending_confirmations() -> &'static tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>> {
+    PENDING_CONFIRMATIONS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+#[tauri::command]
+pub async fn confirm_host_key(host: String, port: u16, accept: bool) -> Result<(), String> {
+    let host_key = format!("{}:{}", host, port);
+    let mut confirmations = get_pending_confirmations().lock().await;
+    if let Some(tx) = confirmations.remove(&host_key) {
+        let _ = tx.send(accept);
+        Ok(())
+    } else {
+        Err("No pending host key confirmation found".to_string())
+    }
+}
+
 #[derive(Clone)]
 pub struct ClientHandler {
     server_id: String,
@@ -27,57 +91,53 @@ impl client::Handler for ClientHandler {
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         use tauri::Manager;
-        use std::fs::File;
-        use std::io::{Read, Write};
 
         let config_dir = match self.app_handle.path().app_config_dir() {
             Ok(path) => path,
             Err(_) => return Ok(false),
         };
 
-        // Ensure directory exists
-        let _ = std::fs::create_dir_all(&config_dir);
         let known_hosts_path = config_dir.join("known_hosts.json");
-
-        let mut known_hosts: HashMap<String, String> = if known_hosts_path.exists() {
-            match File::open(&known_hosts_path) {
-                Ok(mut file) => {
-                    let mut content = String::new();
-                    if file.read_to_string(&mut content).is_ok() {
-                        serde_json::from_str(&content).unwrap_or_default()
-                    } else {
-                        HashMap::new()
-                    }
-                }
-                Err(_) => HashMap::new(),
-            }
-        } else {
-            HashMap::new()
-        };
-
-        // Generate fingerprint string using SHA256
-        let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
         let host_key = format!("{}:{}", self.host, self.port);
+        let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
+
+        let _lock = get_known_hosts_lock().lock().await;
+        let _ = std::fs::create_dir_all(&config_dir);
+
+        let known_hosts = read_known_hosts(&known_hosts_path);
 
         if let Some(saved_fingerprint) = known_hosts.get(&host_key) {
             if saved_fingerprint == &fingerprint {
-                Ok(true)
-            } else {
-                eprintln!(
-                    "WARNING: Remote host identification has changed for {}! Saved: {}, Received: {}",
-                    host_key, saved_fingerprint, fingerprint
-                );
-                Ok(false) // MITM detection
+                return Ok(true);
             }
-        } else {
-            // Trust on first use (TOFU)
-            known_hosts.insert(host_key, fingerprint);
-            if let Ok(json_data) = serde_json::to_string_pretty(&known_hosts) {
-                if let Ok(mut file) = File::create(&known_hosts_path) {
-                    let _ = file.write_all(json_data.as_bytes());
-                }
-            }
+        }
+
+        let is_mismatch = known_hosts.contains_key(&host_key);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let mut confirmations = get_pending_confirmations().lock().await;
+            confirmations.insert(host_key.clone(), tx);
+        }
+
+        let _ = self.app_handle.emit("ssh-host-key-confirm", HostKeyConfirmPayload {
+            host: self.host.clone(),
+            port: self.port,
+            fingerprint: fingerprint.clone(),
+            is_mismatch,
+        });
+
+        let accepted = match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
+            Ok(Ok(val)) => val,
+            _ => false,
+        };
+
+        if accepted {
+            let mut current_hosts = read_known_hosts(&known_hosts_path);
+            current_hosts.insert(host_key, fingerprint);
+            let _ = write_known_hosts(&known_hosts_path, &current_hosts);
             Ok(true)
+        } else {
+            Ok(false)
         }
     }
 }
@@ -155,6 +215,7 @@ pub async fn connect_session(
     }
 
     if authenticated {
+        let _ = disconnect_session(server_id.clone());
         let mut sessions = get_sessions().lock().unwrap();
         sessions.insert(server_id, Arc::new(Mutex::new(handle)));
         Ok(())
@@ -166,7 +227,19 @@ pub async fn connect_session(
 #[tauri::command]
 pub fn disconnect_session(server_id: String) -> Result<(), String> {
     let mut sessions = get_sessions().lock().unwrap();
-    if sessions.remove(&server_id).is_some() {
+    let removed = sessions.remove(&server_id).is_some();
+
+    let prefix = format!("term-{}-", server_id);
+    {
+        let mut senders = get_terminal_senders().lock().unwrap();
+        senders.retain(|k, _| !k.starts_with(&prefix));
+    }
+    {
+        let mut resize_senders = get_terminal_resize_senders().lock().unwrap();
+        resize_senders.retain(|k, _| !k.starts_with(&prefix));
+    }
+
+    if removed {
         Ok(())
     } else {
         Err("Session not found".to_string())
@@ -181,12 +254,20 @@ pub async fn execute_command(server_id: String, command: String) -> Result<Comma
     };
 
     let handle_arc = handle_arc.ok_or_else(|| "Session not found. Please connect first.".to_string())?;
+    
+    let password = crate::keychain::get_server_credential(&server_id, "password").ok();
+    let wrapped_command = if command.contains("sudo ") {
+        wrap_sudo(&command, password.as_deref())
+    } else {
+        command
+    };
+
     let handle = handle_arc.lock().await;
     
     let mut channel = handle.channel_open_session().await
         .map_err(|e| e.to_string())?;
 
-    channel.exec(true, command.as_str()).await
+    channel.exec(true, wrapped_command.as_str()).await
         .map_err(|e| e.to_string())?;
 
     let mut stdout = Vec::new();
@@ -253,7 +334,7 @@ pub async fn write_remote_file(
         .map_err(|e| e.to_string())?;
 
     let cmd = format!(
-        "mkdir -p {} && base64 -d > {}",
+        "mkdir -p {} && (if base64 -d </dev/null >/dev/null 2>&1; then base64 -d; else base64 -D; fi) > {}",
         escaped_parent, escaped_path
     );
     channel.exec(true, cmd.as_str()).await
@@ -294,7 +375,7 @@ pub async fn write_remote_file(
 #[tauri::command]
 pub async fn read_remote_file(server_id: String, path: String) -> Result<String, String> {
     let escaped_path = shell_escape(&path);
-    let cmd = format!("base64 -w 0 {}", escaped_path);
+    let cmd = format!("base64 {}", escaped_path);
 
     let res = execute_command(server_id, cmd).await?;
     if res.exit_code != 0 {
@@ -303,7 +384,21 @@ pub async fn read_remote_file(server_id: String, path: String) -> Result<String,
             res.exit_code, res.stderr
         ));
     }
-    Ok(res.stdout.trim().to_string())
+    let b64_clean = res.stdout.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    Ok(b64_clean)
+}
+
+#[tauri::command]
+pub async fn close_terminal_session(terminal_id: String) -> Result<(), String> {
+    {
+        let mut senders = get_terminal_senders().lock().unwrap();
+        senders.remove(&terminal_id);
+    }
+    {
+        let mut resize_senders = get_terminal_resize_senders().lock().unwrap();
+        resize_senders.remove(&terminal_id);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -450,56 +545,39 @@ pub struct FileInfo {
 pub async fn list_directory(server_id: String, path: String) -> Result<Vec<FileInfo>, String> {
     let escaped_path = shell_escape(&path);
     
-    let python_cmd = format!(
-        "python3 -c \"import os, sys, json, stat; \
-        path = sys.argv[1]; \
-        items = []; \
-        for f in os.listdir(path): \
-            try: \
-                p = os.path.join(path, f); \
-                s = os.stat(p); \
-                items.append({{\
-                    'name': f, \
-                    'is_dir': stat.S_ISDIR(s.st_mode), \
-                    'size': s.st_size if not stat.S_ISDIR(s.st_mode) else 0, \
-                    'permissions': stat.filemode(s.st_mode), \
-                    'modified': int(s.st_mtime) \
-                }}); \
-            except: \
-                pass; \
-        print(json.dumps(items))\" {}",
+    let stat_script = format!(
+        "cd {} && for f in * .*; do \
+           if [ \"$f\" != \".\" ] && [ \"$f\" != \"..\" ] && [ -e \"$f\" ]; then \
+             if stat -c \"%n\" . >/dev/null 2>&1; then \
+               stat -c \"%F|%s|%Y|%A|%n\" \"$f\" 2>/dev/null; \
+             else \
+               stat -f \"%HT|%z|%m|%Sp|%N\" \"$f\" 2>/dev/null; \
+             fi; \
+           fi; \
+         done",
         escaped_path
     );
 
-    let res = execute_command(server_id.clone(), python_cmd).await?;
-    if res.exit_code == 0 {
-        if let Ok(files) = serde_json::from_str::<Vec<FileInfo>>(&res.stdout) {
-            return Ok(files);
-        }
-    }
-
-    let ls_cmd = format!("ls -lA --time-style=+%s {}", escaped_path);
-    let res_ls = execute_command(server_id, ls_cmd).await?;
-    if res_ls.exit_code != 0 {
-        return Err(format!("Failed to list directory: {}", res_ls.stderr));
+    let res = execute_command(server_id, stat_script).await?;
+    if res.exit_code != 0 {
+        return Err(format!("Failed to list directory: {}", res.stderr));
     }
 
     let mut files = Vec::new();
-    for line in res_ls.stdout.lines() {
-        if line.starts_with("total ") {
-            continue;
-        }
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 7 {
-            let permissions = parts[0].to_string();
-            let is_dir = permissions.starts_with('d');
-            let size = parts[4].parse::<u64>().unwrap_or(0);
-            let modified = parts[5].parse::<u64>().unwrap_or(0);
-            let name = parts[6..].join(" ");
+    for line in res.stdout.lines() {
+        let parts: Vec<&str> = line.splitn(5, '|').collect();
+        if parts.len() == 5 {
+            let file_type = parts[0].to_lowercase();
+            let is_dir = file_type.contains("directory");
+            let size = parts[1].parse::<u64>().unwrap_or(0);
+            let modified = parts[2].parse::<u64>().unwrap_or(0);
+            let permissions = parts[3].to_string();
+            let name = parts[4].to_string();
+            
             files.push(FileInfo {
                 name,
                 is_dir,
-                size,
+                size: if is_dir { 0 } else { size },
                 permissions,
                 modified,
             });
@@ -602,6 +680,129 @@ pub async fn get_container_logs(server_id: String, name: String) -> Result<Strin
     Ok(output)
 }
 
+#[derive(serde::Serialize)]
+pub struct ProxyConfig {
+    pub domain: String,
+    pub server_type: String,
+    pub enabled: bool,
+    pub port: u16,
+}
+
+#[tauri::command]
+pub async fn list_proxies(server_id: String) -> Result<Vec<ProxyConfig>, String> {
+    let script = r#"
+# List Nginx proxies
+if [ -d /etc/nginx/sites-available ]; then
+  for f in $(ls -1 /etc/nginx/sites-available/ 2>/dev/null); do
+    if [ "$f" != "default" ]; then
+      port=$(grep -E 'proxy_pass http://127.0.0.1:[0-9]+' "/etc/nginx/sites-available/$f" 2>/dev/null | head -n 1 | grep -o -E '[0-9]+')
+      enabled=false
+      if [ -L "/etc/nginx/sites-enabled/$f" ]; then
+        enabled=true
+      fi
+      echo "nginx|$f|$enabled|${port:-0}"
+    fi
+  done
+fi
+# List Caddy proxies
+if [ -d /etc/caddy/vessel ]; then
+  for f in $(ls -1 /etc/caddy/vessel/ 2>/dev/null); do
+    domain=$(basename "$f" .caddy)
+    port=$(grep -E 'reverse_proxy localhost:[0-9]+' "/etc/caddy/vessel/$f" 2>/dev/null | head -n 1 | grep -o -E '[0-9]+')
+    echo "caddy|$domain|true|${port:-0}"
+  done
+fi
+"#;
+
+    let res = execute_command(server_id, script.to_string()).await?;
+    let mut configs = Vec::new();
+    for line in res.stdout.lines() {
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() == 4 {
+            let server_type = parts[0].to_string();
+            let domain = parts[1].to_string();
+            let enabled = parts[2] == "true";
+            let port = parts[3].parse::<u16>().unwrap_or(0);
+            configs.push(ProxyConfig {
+                domain,
+                server_type,
+                enabled,
+                port,
+            });
+        }
+    }
+    Ok(configs)
+}
+
+#[tauri::command]
+pub async fn delete_proxy(
+    server_id: String,
+    server_type: String,
+    domain: String,
+) -> Result<(), String> {
+    if server_type != "nginx" && server_type != "caddy" {
+        return Err("Invalid server type".to_string());
+    }
+
+    let cmd = if server_type == "nginx" {
+        format!(
+            "sudo rm -f /etc/nginx/sites-enabled/{} && \
+             sudo rm -f /etc/nginx/sites-available/{} && \
+             sudo nginx -t && \
+             sudo systemctl reload nginx",
+            shell_escape(&domain),
+            shell_escape(&domain)
+        )
+    } else {
+        format!(
+            "sudo rm -f /etc/caddy/vessel/{}.caddy && \
+             sudo systemctl reload caddy",
+            shell_escape(&domain)
+        )
+    };
+
+    let res = execute_command(server_id, cmd).await?;
+    if res.exit_code != 0 {
+        return Err(format!("Failed to delete proxy: {}", res.stderr));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn toggle_proxy_status(
+    server_id: String,
+    server_type: String,
+    domain: String,
+    enable: bool,
+) -> Result<(), String> {
+    if server_type != "nginx" {
+        return Err("Only Nginx supports enabling/disabling configs without deleting".to_string());
+    }
+
+    let cmd = if enable {
+        format!(
+            "sudo ln -sf /etc/nginx/sites-available/{} /etc/nginx/sites-enabled/{} && \
+             sudo nginx -t && \
+             sudo systemctl reload nginx",
+            shell_escape(&domain),
+            shell_escape(&domain)
+        )
+    } else {
+        format!(
+            "sudo rm -f /etc/nginx/sites-enabled/{} && \
+             sudo nginx -t && \
+             sudo systemctl reload nginx",
+            shell_escape(&domain)
+        )
+    };
+
+    let res = execute_command(server_id, cmd).await?;
+    if res.exit_code != 0 {
+        return Err(format!("Failed to toggle proxy status: {}", res.stderr));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn configure_proxy(
     server_id: String,
@@ -659,13 +860,24 @@ pub async fn configure_proxy(
         }
     } else {
         // Caddy
-        let caddy_block = format!(
-            "\n# Vessel Proxy Block\n{} {{\n    reverse_proxy localhost:{}\n}}\n",
+        let caddy_config = format!(
+            "{} {{\n    reverse_proxy localhost:{}\n}}\n",
             domain, port
         );
+
+        let tmp_path = format!("/tmp/vessel_caddy_{}", domain);
+        let b64 = base64::Engine::encode(&base64::prelude::BASE64_STANDARD, caddy_config.as_bytes());
+        write_remote_file(server_id.clone(), tmp_path.clone(), b64).await?;
+
         let cmd = format!(
-            "echo {} | sudo tee -a /etc/caddy/Caddyfile && sudo systemctl reload caddy",
-            shell_escape(&caddy_block)
+            "sudo mkdir -p /etc/caddy/vessel && \
+             sudo mv {} /etc/caddy/vessel/{}.caddy && \
+             sudo chown root:root /etc/caddy/vessel/{}.caddy && \
+             (grep -q 'import /etc/caddy/vessel/\\*.caddy' /etc/caddy/Caddyfile || echo 'import /etc/caddy/vessel/*.caddy' | sudo tee -a /etc/caddy/Caddyfile) && \
+             sudo systemctl reload caddy",
+            shell_escape(&tmp_path),
+            shell_escape(&domain),
+            shell_escape(&domain)
         );
         let res = execute_command(server_id, cmd).await?;
         if res.exit_code != 0 {

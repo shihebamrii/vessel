@@ -1,7 +1,8 @@
 import { createSignal, onMount, For, Show, ErrorBoundary } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
-import { Plus, Trash2, Settings, Server, Power, LogOut, Terminal, Folder, Activity, Cpu, Play } from "lucide-solid";
+import { Plus, Trash2, Settings, Server, Power, LogOut, Terminal, Folder, Activity, Cpu, Play, ShieldAlert, Key } from "lucide-solid";
 import DashboardView from "./components/DashboardView";
 import TerminalView from "./components/TerminalView";
 import FileExplorerView from "./components/FileExplorerView";
@@ -47,6 +48,15 @@ export default function App() {
   const [promptModalSecret, setPromptModalSecret] = createSignal("");
   const [promptModalType, setPromptModalType] = createSignal<"password" | "private_key">("password");
   const [pendingProfile, setPendingProfile] = createSignal<ServerProfile | null>(null);
+
+  // Host Key Confirmation Modal State
+  const [showHostKeyModal, setShowHostKeyModal] = createSignal(false);
+  const [pendingHostKey, setPendingHostKey] = createSignal<{
+    host: string;
+    port: number;
+    fingerprint: string;
+    isMismatch: boolean;
+  } | null>(null);
 
   // Toast System State
   const [toasts, setToasts] = createSignal<ToastMessage[]>([]);
@@ -219,6 +229,24 @@ export default function App() {
     executeConnection(profile, secret);
   };
 
+  const handleHostKeyConfirm = async (accept: boolean) => {
+    const info = pendingHostKey();
+    if (!info) return;
+
+    setShowHostKeyModal(false);
+    setPendingHostKey(null);
+
+    try {
+      await invoke("confirm_host_key", {
+        host: info.host,
+        port: info.port,
+        accept,
+      });
+    } catch (err) {
+      console.error("Failed to confirm host key:", err);
+    }
+  };
+
   // Terminate active SSH handle
   const handleDisconnect = async () => {
     if (!activeServerId()) return;
@@ -233,6 +261,19 @@ export default function App() {
 
   onMount(() => {
     loadProfiles();
+    
+    listen<{ host: string; port: number; fingerprint: string; is_mismatch: boolean }>(
+      "ssh-host-key-confirm",
+      (event) => {
+        setPendingHostKey({
+          host: event.payload.host,
+          port: event.payload.port,
+          fingerprint: event.payload.fingerprint,
+          isMismatch: event.payload.is_mismatch,
+        });
+        setShowHostKeyModal(true);
+      }
+    );
   });
 
   return (
@@ -560,6 +601,50 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      </Show>
+
+      {/* Host Key Confirmation Modal */}
+      <Show when={showHostKeyModal() && pendingHostKey()}>
+        <div class="modal-overlay flex items-center justify-center z-50">
+          <div class="glass-panel p-6 max-w-lg w-full mx-4 border-accent-cyan">
+            <h3 class="text-lg font-semibold mb-2 text-text-primary flex items-center gap-2">
+              <Show when={pendingHostKey()?.isMismatch} fallback={<span class="text-accent-cyan flex items-center gap-2"><Key size={18} /> New SSH Host Key</span>}>
+                <span class="text-accent-danger flex items-center gap-2"><ShieldAlert size={18} /> WARNING: Host Key Mismatch!</span>
+              </Show>
+            </h3>
+            
+            <p class="text-xs text-text-secondary mb-4 leading-relaxed">
+              <Show when={pendingHostKey()?.isMismatch} fallback={
+                <>The server at <strong class="text-text-primary">{pendingHostKey()?.host}:{pendingHostKey()?.port}</strong> has presented a key fingerprint that is not in your database. Do you trust this key?</>
+              }>
+                <>
+                  THE REMOTE HOST IDENTIFICATION FOR <strong>{pendingHostKey()?.host}:{pendingHostKey()?.port}</strong> HAS CHANGED! 
+                  This could indicate a Man-in-the-Middle attack or a legitimate server reinstall. Do you want to trust the new key?
+                </>
+              </Show>
+            </p>
+
+            <div class="bg-dark-panel p-3 rounded-lg border border-white/5 mb-4 text-xs font-mono break-all select-all text-slate-300">
+              <div class="text-[10px] text-text-secondary uppercase mb-1 font-semibold">SHA256 Fingerprint</div>
+              {pendingHostKey()?.fingerprint}
+            </div>
+
+            <div class="flex gap-3">
+              <button 
+                class={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${pendingHostKey()?.isMismatch ? 'bg-accent-danger hover:bg-accent-danger/80 text-white' : 'btn-primary'}`} 
+                onClick={() => handleHostKeyConfirm(true)}
+              >
+                Accept & Connect
+              </button>
+              <button 
+                class="btn-secondary flex-1" 
+                onClick={() => handleHostKeyConfirm(false)}
+              >
+                Reject / Cancel
+              </button>
+            </div>
           </div>
         </div>
       </Show>

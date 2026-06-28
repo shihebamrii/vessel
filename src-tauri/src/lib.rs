@@ -28,7 +28,12 @@ pub fn run() {
             ssh::control_container,
             ssh::get_container_logs,
             ssh::configure_proxy,
-            ssh::resize_terminal_session
+            ssh::resize_terminal_session,
+            ssh::confirm_host_key,
+            ssh::close_terminal_session,
+            ssh::list_proxies,
+            ssh::delete_proxy,
+            ssh::toggle_proxy_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,6 @@
 import { createSignal, createEffect, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { RotateCw, Play, Square, FileText, Loader, Activity } from "lucide-solid";
+import { RotateCw, Play, Square, FileText, Loader, Activity, AlertTriangle } from "lucide-solid";
 
 interface DockerProps {
   serverId: string;
@@ -20,17 +20,20 @@ export default function DockerView(props: DockerProps) {
   const [filterQuery, setFilterQuery] = createSignal("");
   const [selectedContainer, setSelectedContainer] = createSignal<string | null>(null);
   const [containerLogs, setContainerLogs] = createSignal("");
+  const [errorMsg, setErrorMsg] = createSignal("");
 
 
   // Fetch docker container stats
   const fetchContainers = async () => {
     setLoading(true);
+    setErrorMsg("");
     try {
       const cmd = "docker ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.Status}}\\t{{.Image}}'";
       const res: any = await invoke("execute_command", { serverId: props.serverId, command: cmd });
       
       if (res.exit_code !== 0) {
         console.error(`Failed to fetch Docker containers: ${res.stderr}`);
+        setErrorMsg(`Failed to fetch Docker containers: ${res.stderr}`);
         return;
       }
 
@@ -49,6 +52,7 @@ export default function DockerView(props: DockerProps) {
       setContainers(list);
     } catch (e: any) {
       console.error(`Docker error: ${e.toString()}`);
+      setErrorMsg(`Docker error: ${e.toString()}`);
     } finally {
       setLoading(false);
     }
@@ -113,6 +117,13 @@ export default function DockerView(props: DockerProps) {
           </button>
         </div>
       </div>
+
+      <Show when={errorMsg()}>
+        <div class="glass-panel p-4 mb-4 border-accent-danger bg-red-950/20 text-accent-danger text-xs flex gap-2">
+          <AlertTriangle size={16} class="shrink-0" />
+          <span>{errorMsg()}</span>
+        </div>
+      </Show>
 
       <div class="flex-1 flex gap-6 overflow-hidden">
         {/* Container list */}

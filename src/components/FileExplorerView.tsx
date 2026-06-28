@@ -17,7 +17,23 @@ interface FileInfo {
   modified: number;
 }
 
+const BINARY_EXTENSIONS = new Set([
+  "png", "jpg", "jpeg", "gif", "ico", "webp", "bmp", "tiff",
+  "exe", "dll", "so", "dylib", "bin", "elf", "out", "app",
+  "zip", "tar", "gz", "xz", "bz2", "7z", "rar", "jar", "war", "deb", "rpm",
+  "mp4", "mp3", "wav", "ogg", "mkv", "avi", "mov", "flv", "webm",
+  "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub",
+  "db", "sqlite", "pyc", "o", "a", "class"
+]);
+
+function isBinaryFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return ext ? BINARY_EXTENSIONS.has(ext) : false;
+}
+
 export default function FileExplorerView(props: FileExplorerProps) {
+  const [isBinary, setIsBinary] = createSignal(false);
+  const [binaryMetadata, setBinaryMetadata] = createSignal<FileInfo | null>(null);
   const [currentPath, setCurrentPath] = createSignal("/");
   const [files, setFiles] = createSignal<FileInfo[]>([]);
   const [loading, setLoading] = createSignal(false);
@@ -59,6 +75,19 @@ export default function FileExplorerView(props: FileExplorerProps) {
   const openFile = async (item: FileInfo) => {
     const parent = currentPath() === "/" ? "" : currentPath();
     const filePath = `${parent}/${item.name}`;
+
+    if (isBinaryFile(item.name)) {
+      setIsBinary(true);
+      setBinaryMetadata(item);
+      setActiveFile(filePath);
+      setActiveFilePermissions(item.permissions);
+      setActiveFileChmod("644");
+      setIsEditorDirty(false);
+      return;
+    }
+
+    setIsBinary(false);
+    setBinaryMetadata(null);
     setLoading(true);
     try {
       const b64: string = await invoke("read_remote_file", { serverId: props.serverId, path: filePath });
@@ -208,7 +237,6 @@ export default function FileExplorerView(props: FileExplorerProps) {
         parent: editorContainer
       });
     }
-    loadDirectory("/");
   });
 
   onCleanup(() => {
@@ -346,24 +374,46 @@ export default function FileExplorerView(props: FileExplorerProps) {
             class="flex-1 flex flex-col overflow-hidden h-full"
             style={{ display: activeFile() !== null ? "flex" : "none" }}
           >
-            {/* Editor toolbar */}
-            <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
-              <div class="truncate flex-1 mr-4">
-                <h4 class="font-mono text-xs font-semibold truncate text-accent-cyan">{activeFile()}</h4>
-                <Show when={isEditorDirty()}>
-                  <span class="text-[10px] text-accent-warning font-semibold font-mono">● UNSAVED CHANGES</span>
-                </Show>
+            {/* Editor Toolbar & CodeMirror Container (hidden when binary) */}
+            <div 
+              class="flex-1 flex flex-col overflow-hidden h-full"
+              style={{ display: isBinary() ? "none" : "flex" }}
+            >
+              {/* Editor toolbar */}
+              <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                <div class="truncate flex-1 mr-4">
+                  <h4 class="font-mono text-xs font-semibold truncate text-accent-cyan">{activeFile()}</h4>
+                  <Show when={isEditorDirty()}>
+                    <span class="text-[10px] text-accent-warning font-semibold font-mono">● UNSAVED CHANGES</span>
+                  </Show>
+                </div>
+                <div class="flex items-center gap-4">
+                  <span class="text-xs text-text-muted">{saveStatus()}</span>
+                  <button class="btn-primary py-1.5 px-3 text-xs" onClick={saveFile}>
+                    <Save size={14} /> Save File
+                  </button>
+                </div>
               </div>
-              <div class="flex items-center gap-4">
-                <span class="text-xs text-text-muted">{saveStatus()}</span>
-                <button class="btn-primary py-1.5 px-3 text-xs" onClick={saveFile}>
-                  <Save size={14} /> Save File
-                </button>
-              </div>
+
+              {/* CodeMirror element mount */}
+              <div ref={editorContainer} class="flex-1 overflow-auto font-mono text-sm bg-[#080c14]" />
             </div>
 
-            {/* CodeMirror element mount */}
-            <div ref={editorContainer} class="flex-1 overflow-auto font-mono text-sm bg-[#080c14]" />
+            {/* Binary File Metadata Panel (shown when binary) */}
+            <Show when={isBinary()}>
+              <div class="flex-1 flex flex-col justify-center items-center text-center p-8 bg-[#080c14]">
+                <File size={64} class="text-accent-indigo/40 mb-4 animate-pulse" />
+                <h3 class="text-lg font-semibold text-text-secondary truncate max-w-md">{activeFile()?.split('/').pop()}</h3>
+                <p class="text-xs text-text-muted mt-2">Binary file editing is not supported to prevent file corruption.</p>
+                <div class="mt-6 glass-panel p-4 max-w-sm w-full text-left space-y-2 text-xs font-mono">
+                  <div class="flex justify-between"><span class="text-text-muted">Path:</span> <span class="truncate max-w-[200px]" title={activeFile()!}>{activeFile()}</span></div>
+                  <div class="flex justify-between"><span class="text-text-muted">Size:</span> <span>{(binaryMetadata()?.size || 0).toLocaleString()} bytes</span></div>
+                  <div class="flex justify-between"><span class="text-text-muted">Type:</span> <span>Binary Resource</span></div>
+                  <div class="flex justify-between"><span class="text-text-muted">Modified:</span> <span>{binaryMetadata()?.modified ? new Date(binaryMetadata()!.modified * 1000).toLocaleString() : "Unknown"}</span></div>
+                  <div class="flex justify-between"><span class="text-text-muted">Permissions:</span> <span>{binaryMetadata()?.permissions}</span></div>
+                </div>
+              </div>
+            </Show>
 
             {/* Visual Permissions toolbar */}
             <div class="p-3 border-t border-white/5 bg-slate-950/40 flex flex-wrap justify-between items-center gap-3 text-xs">

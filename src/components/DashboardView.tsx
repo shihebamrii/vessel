@@ -7,9 +7,8 @@ interface DashboardProps {
   showToast: (message: string, type?: "success" | "error" | "info") => void;
 }
 
-const cpuHistory = new Map<string, { total: number; idle: number }>();
-
 export default function DashboardView(props: DashboardProps) {
+  const cpuHistory = new Map<string, { total: number; idle: number }>();
   const [cpuUsage, setCpuUsage] = createSignal(0);
   const [memTotal, setMemTotal] = createSignal(0);
   const [memUsed, setMemUsed] = createSignal(0);
@@ -21,7 +20,8 @@ export default function DashboardView(props: DashboardProps) {
   const [uptime, setUptime] = createSignal("Loading...");
   const [errorMsg, setErrorMsg] = createSignal("");
 
-  let pollInterval: any;
+  let timerId: any = null;
+  let active = true;
 
   const fetchStats = async () => {
     try {
@@ -111,16 +111,28 @@ export default function DashboardView(props: DashboardProps) {
     }
   };
 
+  const pollStats = async () => {
+    if (!active) return;
+    await fetchStats();
+    if (active) {
+      timerId = setTimeout(pollStats, 3000);
+    }
+  };
+
   // Trigger fetch immediately on mount or serverId change, then poll
   createEffect(() => {
     props.serverId; // Track serverId change explicitly
-    if (pollInterval) clearInterval(pollInterval);
-    fetchStats();
-    pollInterval = setInterval(fetchStats, 3000);
+    active = true;
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+    pollStats();
   });
 
   onCleanup(() => {
-    if (pollInterval) clearInterval(pollInterval);
+    active = false;
+    if (timerId) clearTimeout(timerId);
   });
 
   return (

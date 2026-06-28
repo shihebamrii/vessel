@@ -1,7 +1,7 @@
 {
   "name": "vessel",
   "version": "0.1.0",
-  "description": "",
+  "description": "A secure, local-first VPS control plane over SSH",
   "type": "module",
   "scripts": {
     "start": "vite",

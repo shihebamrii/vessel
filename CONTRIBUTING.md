@@ -33,9 +33,9 @@ To build and run Vessel locally, you need the following prerequisites:
 
 ## Project Structure
 
-*   `/src`: Frontend source code (SolidJS + TypeScript + Tailwind/CSS).
+*   `/src`: Frontend source code (SolidJS + TypeScript + CSS).
 *   `/src-tauri`: Backend source code (Rust application & Tauri configuration).
-*   `/src-tauri/src/ssh`: SSH connection logic and SFTP client code.
+*   `/src-tauri/src/ssh.rs`: SSH connection logic and command utilities.
 
 ## Submitting Pull Requests
 

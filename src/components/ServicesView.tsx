@@ -1,6 +1,6 @@
 import { createSignal, createEffect, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { RotateCw, Play, Square, FileText, Activity, Loader } from "lucide-solid";
+import { RotateCw, Play, Square, FileText, Activity, Loader, AlertTriangle } from "lucide-solid";
 
 interface ServicesProps {
   serverId: string;
@@ -21,17 +21,20 @@ export default function ServicesView(props: ServicesProps) {
   const [filterQuery, setFilterQuery] = createSignal("");
   const [selectedService, setSelectedService] = createSignal<string | null>(null);
   const [serviceLogs, setServiceLogs] = createSignal("");
+  const [errorMsg, setErrorMsg] = createSignal("");
 
 
   // Poll systemd services list
   const fetchServices = async () => {
     setLoading(true);
+    setErrorMsg("");
     try {
       const cmd = "systemctl list-units --type=service --no-legend --no-pager --all";
       const res: any = await invoke("execute_command", { serverId: props.serverId, command: cmd });
       
       if (res.exit_code !== 0) {
         console.error(`Failed to fetch services: ${res.stderr}`);
+        setErrorMsg(`Failed to fetch services: ${res.stderr}`);
         return;
       }
 
@@ -53,6 +56,7 @@ export default function ServicesView(props: ServicesProps) {
       setServices(list);
     } catch (e: any) {
       console.error(`Error: ${e.toString()}`);
+      setErrorMsg(`Connection error: ${e.toString()}`);
     } finally {
       setLoading(false);
     }
@@ -119,6 +123,13 @@ export default function ServicesView(props: ServicesProps) {
           </button>
         </div>
       </div>
+
+      <Show when={errorMsg()}>
+        <div class="glass-panel p-4 mb-4 border-accent-danger bg-red-950/20 text-accent-danger text-xs flex gap-2">
+          <AlertTriangle size={16} class="shrink-0" />
+          <span>{errorMsg()}</span>
+        </div>
+      </Show>
 
       <div class="flex-1 flex gap-6 overflow-hidden">
         {/* Left Side: Services List Table */}
