@@ -72,3 +72,45 @@ pub fn load_profiles(app_handle: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     Ok(content)
 }
+
+#[tauri::command]
+pub fn save_git_repos(app_handle: tauri::AppHandle, json_data: String) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::Write;
+    use tauri::Manager;
+
+    let mut config_path = app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&config_path).map_err(|e| e.to_string())?;
+    config_path.push("git_repos.json");
+
+    let mut file = File::create(config_path).map_err(|e| e.to_string())?;
+    file.write_all(json_data.as_bytes())
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn load_git_repos(app_handle: tauri::AppHandle) -> Result<String, String> {
+    use std::fs::File;
+    use std::io::Read;
+    use tauri::Manager;
+
+    let mut config_path = app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    config_path.push("git_repos.json");
+
+    if !config_path.exists() {
+        return Ok("{}".to_string());
+    }
+
+    let mut file = File::open(config_path).map_err(|e| e.to_string())?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)
+        .map_err(|e| e.to_string())?;
+    Ok(content)
+}

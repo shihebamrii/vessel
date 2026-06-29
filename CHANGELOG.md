@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Git Control Plane:** Full remote repository management panel with VS Code-style working-tree status (staged/unstaged/incoming changes), commit log with ASCII graph, branch viewer with one-click checkout, and a Deploy Pipeline configurator that chains `git pull` with a post-pull action (systemd service restart, Docker container restart, or arbitrary shell command). Repositories are discovered automatically via VPS scan or added manually, and all Git operations stream live output to an integrated console.
 - **Dynamic Log Monitors:** Interactive split-pane consoles for systemd services (`journalctl`) and Docker containers (`docker logs`).
 - **Telemetry Summary:** System telemetry grid in Dashboard displaying Hostname, OS Kernel Release, RAM space, and storage roots.
 - **Searchable Proxy Routes:** Search and filter functionality in Reverse Proxy manager, along with domain hyperlinks.

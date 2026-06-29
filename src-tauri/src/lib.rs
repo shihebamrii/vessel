@@ -12,6 +12,8 @@ pub fn run() {
             keychain::delete_server_credential,
             keychain::save_profiles,
             keychain::load_profiles,
+            keychain::save_git_repos,
+            keychain::load_git_repos,
             ssh::connect_session,
             ssh::disconnect_session,
             ssh::execute_command,

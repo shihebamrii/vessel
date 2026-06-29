@@ -186,6 +186,15 @@ From one application.
 * SSL provisioning
 * Let's Encrypt integration
 
+### 🌿 Git Control Plane
+
+* VS Code-style working-tree status (staged, unstaged, incoming changes)
+* Commit log with ASCII branch graph
+* Branch viewer with one-click remote checkout
+* Deploy pipeline: chain `git pull` with a post-pull action (systemd restart, Docker restart, or custom script)
+* Auto-scan VPS to discover all Git repositories
+* Live-streamed console output for every Git operation
+
 ---
 
 ## 🛡 Security

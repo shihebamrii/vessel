@@ -2,13 +2,14 @@ import { createSignal, onMount, For, Show, ErrorBoundary } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
-import { Plus, Trash2, Settings, Server, Power, LogOut, Terminal, Folder, Activity, Cpu, Play, ShieldAlert, Key, Loader } from "lucide-solid";
+import { Plus, Trash2, Settings, Server, Power, LogOut, Terminal, Folder, Activity, Cpu, Play, ShieldAlert, Key, Loader, GitBranch } from "lucide-solid";
 import DashboardView from "./components/DashboardView";
 import TerminalView from "./components/TerminalView";
 import FileExplorerView from "./components/FileExplorerView";
 import ServicesView from "./components/ServicesView";
 import DockerView from "./components/DockerView";
 import ProxyView from "./components/ProxyView";
+import GitView from "./components/GitView";
 
 interface ServerProfile {
   id: string;
@@ -30,7 +31,7 @@ export default function App() {
   const [selectedProfileId, setSelectedProfileId] = createSignal<string | null>(null);
   const [activeServerId, setActiveServerId] = createSignal<string | null>(null);
   const [connectionState, setConnectionState] = createSignal<"disconnected" | "connecting" | "connected">("disconnected");
-  const [activeTab, setActiveTab] = createSignal<"dashboard" | "explorer" | "terminal" | "services" | "docker" | "proxy">("dashboard");
+  const [activeTab, setActiveTab] = createSignal<"dashboard" | "explorer" | "terminal" | "services" | "docker" | "proxy" | "git">("dashboard");
   const [errorMessage, setErrorMessage] = createSignal("");
 
   // Server Form State
@@ -371,6 +372,12 @@ export default function App() {
             >
               <Settings size={13} /> Proxy Manager
             </button>
+            <button 
+              class={`tab-button ${activeTab() === "git" ? "active" : ""}`}
+              onClick={() => setActiveTab("git")}
+            >
+              <GitBranch size={13} /> Git Control Plane
+            </button>
           </div>
         </Show>
       </div>
@@ -571,6 +578,9 @@ export default function App() {
               </Show>
               <Show when={activeTab() === "proxy"}>
                 <ProxyView serverId={activeServerId()!} showToast={showToast} />
+              </Show>
+              <Show when={activeTab() === "git"}>
+                <GitView serverId={activeServerId()!} showToast={showToast} />
               </Show>
             </ErrorBoundary>
           </div>
