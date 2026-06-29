@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
-use std::net::ToSocketAddrs;
+use russh::keys::{decode_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKey};
 use russh::{client, ChannelMsg};
-use russh::keys::{PublicKey, decode_secret_key, PrivateKeyWithHashAlg, HashAlg};
-use tokio::sync::Mutex;
+use std::collections::HashMap;
+use std::net::ToSocketAddrs;
+use std::sync::{Arc, OnceLock};
 use tauri::Emitter;
+use tokio::sync::Mutex;
 
 pub fn shell_escape(s: &str) -> String {
     let escaped = s.replace("'", "'\\''");
@@ -49,7 +49,10 @@ fn read_known_hosts(path: &std::path::Path) -> HashMap<String, String> {
     HashMap::new()
 }
 
-fn write_known_hosts(path: &std::path::Path, known_hosts: &HashMap<String, String>) -> Result<(), std::io::Error> {
+fn write_known_hosts(
+    path: &std::path::Path,
+    known_hosts: &HashMap<String, String>,
+) -> Result<(), std::io::Error> {
     use std::fs::File;
     use std::io::Write;
     let json_data = serde_json::to_string_pretty(known_hosts)
@@ -67,9 +70,12 @@ pub struct HostKeyConfirmPayload {
     pub is_mismatch: bool,
 }
 
-static PENDING_CONFIRMATIONS: OnceLock<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>> = OnceLock::new();
+static PENDING_CONFIRMATIONS: OnceLock<
+    tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+> = OnceLock::new();
 
-fn get_pending_confirmations() -> &'static tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>> {
+fn get_pending_confirmations(
+) -> &'static tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>> {
     PENDING_CONFIRMATIONS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
 }
 
@@ -129,12 +135,15 @@ impl client::Handler for ClientHandler {
             confirmations.insert(host_key.clone(), tx);
         }
 
-        let _ = self.app_handle.emit("ssh-host-key-confirm", HostKeyConfirmPayload {
-            host: self.host.clone(),
-            port: self.port,
-            fingerprint: fingerprint.clone(),
-            is_mismatch,
-        });
+        let _ = self.app_handle.emit(
+            "ssh-host-key-confirm",
+            HostKeyConfirmPayload {
+                host: self.host.clone(),
+                port: self.port,
+                fingerprint: fingerprint.clone(),
+                is_mismatch,
+            },
+        );
 
         let accepted = match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
             Ok(Ok(val)) => val,
@@ -166,10 +175,22 @@ fn get_sessions() -> &'static std::sync::Mutex<HashMap<String, ActiveHandle>> {
     SESSIONS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
-static TERMINAL_SENDERS: OnceLock<std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<String>>>> = OnceLock::new();
+static TERMINAL_SENDERS: OnceLock<
+    std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<String>>>,
+> = OnceLock::new();
 
-fn get_terminal_senders() -> &'static std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<String>>> {
+fn get_terminal_senders(
+) -> &'static std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<String>>> {
     TERMINAL_SENDERS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+static LOG_STREAM_SENDERS: OnceLock<
+    std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<()>>>,
+> = OnceLock::new();
+
+fn get_log_stream_senders(
+) -> &'static std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<()>>> {
+    LOG_STREAM_SENDERS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
 #[tauri::command]
@@ -183,22 +204,24 @@ pub async fn connect_session(
     private_key: Option<String>,
 ) -> Result<(), String> {
     let addr = format!("{}:{}", host, port);
-    let socket_addr = addr.to_socket_addrs()
+    let socket_addr = addr
+        .to_socket_addrs()
         .map_err(|e| e.to_string())?
         .next()
         .ok_or_else(|| "Failed to resolve address".to_string())?;
 
     let config = client::Config::default();
     let config = Arc::new(config);
-    
+
     let client_handler = ClientHandler {
         server_id: server_id.clone(),
         host: host.clone(),
         port,
         app_handle,
     };
-    
-    let mut handle = client::connect(config, socket_addr, client_handler).await
+
+    let mut handle = client::connect(config, socket_addr, client_handler)
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut authenticated = false;
@@ -207,10 +230,12 @@ pub async fn connect_session(
         if !key_str.trim().is_empty() {
             let key = decode_secret_key(key_str, None)
                 .map_err(|e| format!("Failed to parse private key: {}", e))?;
-            
+
             let wrapped_key = PrivateKeyWithHashAlg::new(Arc::new(key), None);
 
-            let auth_res = handle.authenticate_publickey(&username, wrapped_key).await
+            let auth_res = handle
+                .authenticate_publickey(&username, wrapped_key)
+                .await
                 .map_err(|e| e.to_string())?;
             authenticated = matches!(auth_res, russh::client::AuthResult::Success);
         }
@@ -218,7 +243,9 @@ pub async fn connect_session(
 
     if !authenticated {
         if let Some(ref pass) = password {
-            let auth_res = handle.authenticate_password(&username, pass).await
+            let auth_res = handle
+                .authenticate_password(&username, pass)
+                .await
                 .map_err(|e| e.to_string())?;
             authenticated = matches!(auth_res, russh::client::AuthResult::Success);
         }
@@ -249,6 +276,21 @@ pub fn disconnect_session(server_id: String) -> Result<(), String> {
         resize_senders.retain(|k, _| !k.starts_with(&prefix));
     }
 
+    let log_prefix = format!("logs-{}-", server_id);
+    {
+        let mut senders = get_log_stream_senders().lock().unwrap();
+        let mut to_remove = Vec::new();
+        for (k, tx) in senders.iter() {
+            if k.starts_with(&log_prefix) {
+                let _ = tx.try_send(());
+                to_remove.push(k.clone());
+            }
+        }
+        for k in to_remove {
+            senders.remove(&k);
+        }
+    }
+
     if removed {
         Ok(())
     } else {
@@ -266,8 +308,9 @@ pub async fn execute_command(server_id: String, command: String) -> Result<Comma
         sessions.get(&server_id).cloned()
     };
 
-    let handle_arc = handle_arc.ok_or_else(|| "Session not found. Please connect first.".to_string())?;
-    
+    let handle_arc =
+        handle_arc.ok_or_else(|| "Session not found. Please connect first.".to_string())?;
+
     let password = crate::keychain::get_server_credential(&server_id, "password").ok();
     let wrapped_command = if command.contains("sudo ") {
         wrap_sudo(&command, password.as_deref())
@@ -276,11 +319,15 @@ pub async fn execute_command(server_id: String, command: String) -> Result<Comma
     };
 
     let handle = handle_arc.lock().await;
-    
-    let mut channel = handle.channel_open_session().await
+
+    let mut channel = handle
+        .channel_open_session()
+        .await
         .map_err(|e| e.to_string())?;
 
-    channel.exec(true, wrapped_command.as_str()).await
+    channel
+        .exec(true, wrapped_command.as_str())
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut stdout = Vec::new();
@@ -312,9 +359,12 @@ pub async fn execute_command(server_id: String, command: String) -> Result<Comma
     })
 }
 
-static TERMINAL_RESIZE_SENDERS: OnceLock<std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<(u32, u32)>>>> = OnceLock::new();
+static TERMINAL_RESIZE_SENDERS: OnceLock<
+    std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<(u32, u32)>>>,
+> = OnceLock::new();
 
-fn get_terminal_resize_senders() -> &'static std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<(u32, u32)>>> {
+fn get_terminal_resize_senders(
+) -> &'static std::sync::Mutex<HashMap<String, tokio::sync::mpsc::Sender<(u32, u32)>>> {
     TERMINAL_RESIZE_SENDERS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -326,14 +376,18 @@ pub async fn write_remote_file(
 ) -> Result<(), String> {
     validate_path(&path)?;
     let path_buf = std::path::Path::new(&path);
-    let parent = path_buf.parent()
+    let parent = path_buf
+        .parent()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "/".to_string());
 
     let escaped_parent = shell_escape(&parent);
     let escaped_path = shell_escape(&path);
 
-    if !base64_content.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=') {
+    if !base64_content
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    {
         return Err("Invalid base64 content format".to_string());
     }
 
@@ -341,24 +395,30 @@ pub async fn write_remote_file(
         let sessions = get_sessions().lock().unwrap();
         sessions.get(&server_id).cloned()
     };
-    let handle_arc = handle_arc.ok_or_else(|| "Session not found. Please connect first.".to_string())?;
+    let handle_arc =
+        handle_arc.ok_or_else(|| "Session not found. Please connect first.".to_string())?;
     let handle = handle_arc.lock().await;
 
-    let mut channel = handle.channel_open_session().await
+    let mut channel = handle
+        .channel_open_session()
+        .await
         .map_err(|e| e.to_string())?;
 
     let cmd = format!(
         "mkdir -p {} && (if base64 -d </dev/null >/dev/null 2>&1; then base64 -d; else base64 -D; fi) > {}",
         escaped_parent, escaped_path
     );
-    channel.exec(true, cmd.as_str()).await
+    channel
+        .exec(true, cmd.as_str())
+        .await
         .map_err(|e| e.to_string())?;
 
-    channel.data(base64_content.as_bytes()).await
+    channel
+        .data(base64_content.as_bytes())
+        .await
         .map_err(|e| e.to_string())?;
 
-    channel.eof().await
-        .map_err(|e| e.to_string())?;
+    channel.eof().await.map_err(|e| e.to_string())?;
 
     let mut exit_code = 0;
     let mut stderr = Vec::new();
@@ -399,7 +459,11 @@ pub async fn read_remote_file(server_id: String, path: String) -> Result<String,
             res.exit_code, res.stderr
         ));
     }
-    let b64_clean = res.stdout.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    let b64_clean = res
+        .stdout
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>();
     Ok(b64_clean)
 }
 
@@ -429,13 +493,19 @@ pub async fn start_terminal_session(
     let handle_arc = handle_arc.ok_or_else(|| "Session not found".to_string())?;
     let handle = handle_arc.lock().await;
 
-    let mut channel = handle.channel_open_session().await
+    let mut channel = handle
+        .channel_open_session()
+        .await
         .map_err(|e| e.to_string())?;
 
-    channel.request_pty(true, "xterm-256color", 80, 24, 0, 0, &[]).await
+    channel
+        .request_pty(true, "xterm-256color", 80, 24, 0, 0, &[])
+        .await
         .map_err(|e| e.to_string())?;
 
-    channel.request_shell(true).await
+    channel
+        .request_shell(true)
+        .await
         .map_err(|e| e.to_string())?;
 
     let event_name = format!("terminal-data:{}", terminal_id);
@@ -497,7 +567,7 @@ pub async fn start_terminal_session(
                 }
             }
         }
-        
+
         // Clean up terminal senders to prevent leaks
         {
             let mut senders = get_terminal_senders().lock().unwrap();
@@ -513,10 +583,7 @@ pub async fn start_terminal_session(
 }
 
 #[tauri::command]
-pub async fn write_terminal_data(
-    terminal_id: String,
-    data: String,
-) -> Result<(), String> {
+pub async fn write_terminal_data(terminal_id: String, data: String) -> Result<(), String> {
     let sender = {
         let senders = get_terminal_senders().lock().unwrap();
         senders.get(&terminal_id).cloned()
@@ -560,7 +627,7 @@ pub struct FileInfo {
 pub async fn list_directory(server_id: String, path: String) -> Result<Vec<FileInfo>, String> {
     validate_path(&path)?;
     let escaped_path = shell_escape(&path);
-    
+
     let stat_script = format!(
         "cd {} && for f in * .*; do \
            if [ \"$f\" != \".\" ] && [ \"$f\" != \"..\" ] && [ -e \"$f\" ]; then \
@@ -589,7 +656,7 @@ pub async fn list_directory(server_id: String, path: String) -> Result<Vec<FileI
             let modified = parts[2].parse::<u64>().unwrap_or(0);
             let permissions = parts[3].to_string();
             let name = parts[4].to_string();
-            
+
             files.push(FileInfo {
                 name,
                 is_dir,
@@ -629,7 +696,11 @@ pub async fn create_directory(server_id: String, path: String) -> Result<(), Str
 }
 
 #[tauri::command]
-pub async fn delete_file_or_directory(server_id: String, path: String, is_dir: bool) -> Result<(), String> {
+pub async fn delete_file_or_directory(
+    server_id: String,
+    path: String,
+    is_dir: bool,
+) -> Result<(), String> {
     validate_path(&path)?;
     let cmd = if is_dir {
         format!("rm -rf {}", shell_escape(&path))
@@ -644,13 +715,20 @@ pub async fn delete_file_or_directory(server_id: String, path: String, is_dir: b
 }
 
 #[tauri::command]
-pub async fn control_service(server_id: String, service_name: String, action: String) -> Result<(), String> {
+pub async fn control_service(
+    server_id: String,
+    service_name: String,
+    action: String,
+) -> Result<(), String> {
     if action != "start" && action != "stop" && action != "restart" {
         return Err("Invalid service action".to_string());
     }
     let cmd = format!(
         "sudo systemctl {} {} || systemctl {} {}",
-        action, shell_escape(&service_name), action, shell_escape(&service_name)
+        action,
+        shell_escape(&service_name),
+        action,
+        shell_escape(&service_name)
     );
     let res = execute_command(server_id, cmd).await?;
     if res.exit_code != 0 {
@@ -661,7 +739,10 @@ pub async fn control_service(server_id: String, service_name: String, action: St
 
 #[tauri::command]
 pub async fn get_service_logs(server_id: String, service_name: String) -> Result<String, String> {
-    let cmd = format!("journalctl -u {} -n 50 --no-pager", shell_escape(&service_name));
+    let cmd = format!(
+        "journalctl -u {} -n 50 --no-pager",
+        shell_escape(&service_name)
+    );
     let res = execute_command(server_id, cmd).await?;
     if res.exit_code != 0 {
         return Err(res.stderr);
@@ -670,7 +751,11 @@ pub async fn get_service_logs(server_id: String, service_name: String) -> Result
 }
 
 #[tauri::command]
-pub async fn control_container(server_id: String, name: String, action: String) -> Result<(), String> {
+pub async fn control_container(
+    server_id: String,
+    name: String,
+    action: String,
+) -> Result<(), String> {
     if action != "start" && action != "stop" && action != "restart" {
         return Err("Invalid container action".to_string());
     }
@@ -834,7 +919,12 @@ pub async fn configure_proxy(
         return Err("Invalid server type".to_string());
     }
 
-    if domain.is_empty() || domain.len() > 253 || !domain.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+    if domain.is_empty()
+        || domain.len() > 253
+        || !domain
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
         return Err("Invalid domain name format".to_string());
     }
 
@@ -845,8 +935,9 @@ pub async fn configure_proxy(
         );
 
         let tmp_path = format!("/tmp/vessel_nginx_{}", domain);
-        
-        let b64 = base64::Engine::encode(&base64::prelude::BASE64_STANDARD, nginx_config.as_bytes());
+
+        let b64 =
+            base64::Engine::encode(&base64::prelude::BASE64_STANDARD, nginx_config.as_bytes());
         write_remote_file(server_id.clone(), tmp_path.clone(), b64).await?;
 
         let cmd = format!(
@@ -879,13 +970,11 @@ pub async fn configure_proxy(
         }
     } else {
         // Caddy
-        let caddy_config = format!(
-            "{} {{\n    reverse_proxy localhost:{}\n}}\n",
-            domain, port
-        );
+        let caddy_config = format!("{} {{\n    reverse_proxy localhost:{}\n}}\n", domain, port);
 
         let tmp_path = format!("/tmp/vessel_caddy_{}", domain);
-        let b64 = base64::Engine::encode(&base64::prelude::BASE64_STANDARD, caddy_config.as_bytes());
+        let b64 =
+            base64::Engine::encode(&base64::prelude::BASE64_STANDARD, caddy_config.as_bytes());
         write_remote_file(server_id.clone(), tmp_path.clone(), b64).await?;
 
         let cmd = format!(
@@ -903,6 +992,205 @@ pub async fn configure_proxy(
             return Err(format!("Caddy config deployment failed: {}", res.stderr));
         }
     }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn start_container_logs_stream(
+    app_handle: tauri::AppHandle,
+    server_id: String,
+    stream_id: String,
+    containers: Vec<String>,
+) -> Result<(), String> {
+    let handle_arc = {
+        let sessions = get_sessions().lock().unwrap();
+        sessions.get(&server_id).cloned()
+    };
+    let handle_arc =
+        handle_arc.ok_or_else(|| "Session not found. Please connect first.".to_string())?;
+
+    // Stop existing stream with this ID if any
+    let _ = stop_container_logs_stream(stream_id.clone());
+
+    // Build the multiplexed shell command
+    let mut command = String::new();
+    for container in &containers {
+        if container.is_empty()
+            || container.contains('\n')
+            || container.contains('\r')
+            || container.contains('\0')
+        {
+            continue;
+        }
+        let escaped = shell_escape(container);
+        command.push_str(&format!(
+            "(docker logs -f --tail 50 {} 2>&1 | while read -r line; do echo \"[{}] $line\"; done) &\n",
+            escaped, container
+        ));
+    }
+    if command.is_empty() {
+        return Err("No valid containers specified".to_string());
+    }
+    command.push_str("wait");
+
+    let password = crate::keychain::get_server_credential(&server_id, "password").ok();
+    let wrapped_command = if command.contains("sudo ") {
+        wrap_sudo(&command, password.as_deref())
+    } else {
+        command
+    };
+
+    let handle = handle_arc.lock().await;
+    let mut channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    channel
+        .exec(true, wrapped_command.as_str())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let event_name = format!("container-logs:{}", stream_id);
+    let app_handle_clone = app_handle.clone();
+    let stream_id_clone = stream_id.clone();
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
+    {
+        let mut senders = get_log_stream_senders().lock().unwrap();
+        senders.insert(stream_id.clone(), tx);
+    }
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                msg_opt = channel.wait() => {
+                    match msg_opt {
+                        Some(msg) => {
+                            match msg {
+                                ChannelMsg::Data { data } => {
+                                    let data_str = String::from_utf8_lossy(&data).into_owned();
+                                    let _ = app_handle_clone.emit(&event_name, data_str);
+                                }
+                                ChannelMsg::ExtendedData { data, ext: 1 } => {
+                                    let data_str = String::from_utf8_lossy(&data).into_owned();
+                                    let _ = app_handle_clone.emit(&event_name, data_str);
+                                }
+                                ChannelMsg::ExitStatus { .. } => {
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+                _ = rx.recv() => {
+                    let _ = channel.close().await;
+                    break;
+                }
+            }
+        }
+
+        // Cleanup sender
+        let mut senders = get_log_stream_senders().lock().unwrap();
+        senders.remove(&stream_id_clone);
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_container_logs_stream(stream_id: String) -> Result<(), String> {
+    let mut senders = get_log_stream_senders().lock().unwrap();
+    if let Some(tx) = senders.remove(&stream_id) {
+        let _ = tx.try_send(());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn start_command_stream(
+    app_handle: tauri::AppHandle,
+    server_id: String,
+    stream_id: String,
+    command: String,
+) -> Result<(), String> {
+    let handle_arc = {
+        let sessions = get_sessions().lock().unwrap();
+        sessions.get(&server_id).cloned()
+    };
+    let handle_arc =
+        handle_arc.ok_or_else(|| "Session not found. Please connect first.".to_string())?;
+
+    let password = crate::keychain::get_server_credential(&server_id, "password").ok();
+    let wrapped_command = if command.contains("sudo ") {
+        wrap_sudo(&command, password.as_deref())
+    } else {
+        command
+    };
+
+    let handle = handle_arc.lock().await;
+    let mut channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    channel
+        .exec(true, wrapped_command.as_str())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let event_name = format!("command-stream:{}", stream_id);
+    let app_handle_clone = app_handle.clone();
+    let stream_id_clone = stream_id.clone();
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
+    {
+        let mut senders = get_log_stream_senders().lock().unwrap();
+        senders.insert(stream_id.clone(), tx);
+    }
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                msg_opt = channel.wait() => {
+                    match msg_opt {
+                        Some(msg) => {
+                            match msg {
+                                ChannelMsg::Data { data } => {
+                                    let data_str = String::from_utf8_lossy(&data).into_owned();
+                                    let _ = app_handle_clone.emit(&event_name, data_str);
+                                }
+                                ChannelMsg::ExtendedData { data, ext: 1 } => {
+                                    let data_str = String::from_utf8_lossy(&data).into_owned();
+                                    let _ = app_handle_clone.emit(&event_name, data_str);
+                                }
+                                ChannelMsg::ExitStatus { exit_status } => {
+                                    let _ = app_handle_clone.emit(&event_name, format!("\n[Exit Code: {}]\n", exit_status));
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+                _ = rx.recv() => {
+                    let _ = channel.close().await;
+                    break;
+                }
+            }
+        }
+
+        let mut senders = get_log_stream_senders().lock().unwrap();
+        senders.remove(&stream_id_clone);
+    });
 
     Ok(())
 }

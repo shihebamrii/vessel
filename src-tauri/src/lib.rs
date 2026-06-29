@@ -1,5 +1,5 @@
-pub mod ssh;
 pub mod keychain;
+pub mod ssh;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -27,6 +27,9 @@ pub fn run() {
             ssh::get_service_logs,
             ssh::control_container,
             ssh::get_container_logs,
+            ssh::start_container_logs_stream,
+            ssh::stop_container_logs_stream,
+            ssh::start_command_stream,
             ssh::configure_proxy,
             ssh::resize_terminal_session,
             ssh::confirm_host_key,
