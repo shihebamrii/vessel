@@ -11,8 +11,6 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  Power,
-  PowerOff,
 } from "lucide-solid";
 
 interface FirewallProps {
@@ -43,6 +41,7 @@ interface DisabledRuleEntry {
   action: string;
   from: string;
   ipv6: boolean;
+  displayOrder: number; // UFW rule number at time of disabling, used to keep row in place
   params: RestoreParams;
 }
 
@@ -102,10 +101,66 @@ function parseRuleForRestore(rule: FirewallRule): RestoreParams | null {
 
   const parts = rule.action.toUpperCase().split(" ");
   const policy = parts[0].toLowerCase();
-  const direction = parts[1] ? parts[1].toLowerCase() : "both";
+  const rawDir = parts[1]?.toLowerCase();
+  // FWD rules can't be re-added via add_rule (not a supported direction)
+  if (rawDir === "fwd") return null;
+  const direction = rawDir ?? "both";
   const from_ip = rule.from === "Anywhere" ? "any" : rule.from;
 
   return { ...portParam, proto, policy, direction, from_ip };
+}
+
+// ── Toggle pill component ─────────────────────────────────────────────────
+function RuleToggle(props: {
+  enabled: boolean;
+  canToggle: boolean;
+  isLoading: boolean;
+  onToggle: () => void;
+}) {
+  const title = () =>
+    !props.canToggle
+      ? "App-profile rules cannot be toggled — delete instead"
+      : props.enabled
+      ? "Enabled — click to disable"
+      : "Disabled — click to enable";
+
+  return (
+    <button
+      onClick={props.onToggle}
+      disabled={props.isLoading || !props.canToggle}
+      title={title()}
+      style={{
+        width: "32px",
+        height: "17px",
+        background: props.enabled
+          ? "var(--accent-success)"
+          : "rgba(255,255,255,0.10)",
+        border: `1px solid ${props.enabled ? "var(--accent-success)" : "rgba(255,255,255,0.18)"}`,
+        "border-radius": "9px",
+        cursor: props.isLoading || !props.canToggle ? "not-allowed" : "pointer",
+        position: "relative",
+        padding: "0",
+        opacity: !props.canToggle ? "0.35" : "1",
+        "flex-shrink": "0",
+        transition: "background 0.18s, border-color 0.18s",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: "2px",
+          left: "2px",
+          width: "11px",
+          height: "11px",
+          background: props.enabled ? "white" : "rgba(255,255,255,0.45)",
+          "border-radius": "50%",
+          display: "block",
+          transform: props.enabled ? "translateX(15px)" : "translateX(0)",
+          transition: "transform 0.18s, background 0.18s",
+        }}
+      />
+    </button>
+  );
 }
 
 export default function FirewallView(props: FirewallProps) {
@@ -322,6 +377,7 @@ export default function FirewallView(props: FirewallProps) {
           action: rule.action,
           from: rule.from,
           ipv6: rule.ipv6,
+          displayOrder: rule.num,
           params,
         };
         const updated = [...disabledRules(), entry];
@@ -432,6 +488,23 @@ export default function FirewallView(props: FirewallProps) {
     setFormPort(p.port);
     setFormProto(p.proto);
     setFormDirection("in");
+  };
+
+  // ── Unified sorted display list ───────────────────────────────────────────
+  // Merges active UFW rules and locally-saved disabled rules, sorted so each
+  // disabled rule stays at its original position rather than jumping to the bottom.
+  const displayItems = () => {
+    type Item =
+      | { kind: "active"; order: number; rule: FirewallRule }
+      | { kind: "disabled"; order: number; entry: DisabledRuleEntry };
+
+    const active: Item[] = rules().map((r) => ({ kind: "active", order: r.num, rule: r }));
+    const disabled: Item[] = disabledRules().map((e) => ({
+      kind: "disabled",
+      order: e.displayOrder ?? 9999,
+      entry: e,
+    }));
+    return [...active, ...disabled].sort((a, b) => a.order - b.order);
   };
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -636,13 +709,13 @@ export default function FirewallView(props: FirewallProps) {
               </div>
             </div>
 
-            {/* ── Active Rules table ── */}
+            {/* ── Rules table (active + disabled merged) ── */}
             <div class="glass-panel p-3 flex-1 overflow-hidden flex flex-col">
               <div
                 class="text-text-muted font-mono uppercase mb-2 shrink-0"
                 style={{ "font-size": "9px", "letter-spacing": "0.08em" }}
               >
-                {rules().length} active rule{rules().length !== 1 ? "s" : ""}
+                {rules().length} active · {disabledRules().length} disabled
               </div>
 
               <div class="flex-1 overflow-auto pr-1">
@@ -655,11 +728,11 @@ export default function FirewallView(props: FirewallProps) {
                       <th class="text-left">Action</th>
                       <th class="text-left">Source</th>
                       <th class="text-left" style={{ width: "40px" }}>IPv6</th>
-                      <th style={{ width: "80px" }}></th>
+                      <th style={{ width: "68px" }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    <Show when={loading() && rules().length === 0}>
+                    <Show when={loading() && rules().length === 0 && disabledRules().length === 0}>
                       <tr>
                         <td colspan="7" class="py-8 text-center text-text-secondary">
                           <Loader class="animate-spin inline mr-1.5 text-accent-cyan" size={12} />
@@ -668,20 +741,16 @@ export default function FirewallView(props: FirewallProps) {
                       </tr>
                     </Show>
 
-                    <Show when={!loading() && rules().length === 0}>
+                    <Show when={!loading() && rules().length === 0 && disabledRules().length === 0}>
                       <tr>
                         <td colspan="7" class="py-12 text-center">
                           <div class="flex flex-col items-center gap-2">
-                            <ShieldOff
-                              size={22}
-                              class="text-text-muted"
-                              style={{ opacity: "0.35" }}
-                            />
+                            <ShieldOff size={22} class="text-text-muted" style={{ opacity: "0.35" }} />
                             <span
                               class="text-text-muted font-mono font-bold uppercase"
                               style={{ "font-size": "10px", "letter-spacing": "0.08em" }}
                             >
-                              No active rules
+                              No rules configured
                             </span>
                             <span class="text-text-muted font-mono" style={{ "font-size": "9px" }}>
                               Click "Add Rule" to start controlling traffic
@@ -691,30 +760,40 @@ export default function FirewallView(props: FirewallProps) {
                       </tr>
                     </Show>
 
-                    <For each={rules()}>
-                      {(rule) => {
-                        const style = getPolicyStyle(rule.action);
-                        const dir = directionFromAction(rule.action);
-                        const canDisable = parseRuleForRestore(rule) !== null;
+                    {/* Unified list — active and disabled rules sorted by original position */}
+                    <For each={displayItems()}>
+                      {(item) => {
+                        const isActive = item.kind === "active";
+                        const to     = isActive ? item.rule.to     : item.entry.to;
+                        const action = isActive ? item.rule.action  : item.entry.action;
+                        const from   = isActive ? item.rule.from    : item.entry.from;
+                        const ipv6   = isActive ? item.rule.ipv6    : item.entry.ipv6;
+                        const num    = isActive ? item.rule.num     : null;
+
+                        const pStyle    = getPolicyStyle(action);
+                        const dir       = directionFromAction(action);
+                        const canToggle = isActive ? parseRuleForRestore(item.rule) !== null : true;
+
                         return (
-                          <tr>
-                            <td class="text-text-muted font-mono">{rule.num}</td>
-                            <td class="font-semibold text-text-primary font-mono">{rule.to}</td>
+                          <tr style={{ opacity: isActive ? "1" : "0.4" }}>
+                            <td class="text-text-muted font-mono">{num ?? "—"}</td>
+                            <td
+                              class="font-semibold font-mono"
+                              style={{ color: isActive ? "var(--text-primary)" : "var(--text-secondary)" }}
+                            >
+                              {to}
+                            </td>
                             <td>
                               <Show when={dir !== ""}>
                                 <span
                                   class="font-mono font-bold"
                                   style={{
                                     "font-size": "9px",
-                                    "letter-spacing": "0.05em",
-                                    color:
-                                      dir === "OUT"
-                                        ? "var(--accent-cyan)"
-                                        : "var(--text-secondary)",
-                                    background:
-                                      dir === "OUT"
-                                        ? "rgba(0,145,255,0.10)"
-                                        : "rgba(255,255,255,0.05)",
+                                    color: isActive && dir === "OUT" ? "var(--accent-cyan)"
+                                         : isActive ? "var(--text-secondary)"
+                                         : "var(--text-muted)",
+                                    background: isActive && dir === "OUT" ? "rgba(0,145,255,0.10)"
+                                              : "rgba(255,255,255,0.05)",
                                     padding: "2px 5px",
                                     "border-radius": "2px",
                                   }}
@@ -726,8 +805,8 @@ export default function FirewallView(props: FirewallProps) {
                             <td>
                               <span
                                 style={{
-                                  color: style.color,
-                                  background: style.bg,
+                                  color: isActive ? pStyle.color : "var(--text-muted)",
+                                  background: isActive ? pStyle.bg : "rgba(255,255,255,0.04)",
                                   "font-size": "9px",
                                   "font-weight": "700",
                                   "text-transform": "uppercase",
@@ -738,30 +817,38 @@ export default function FirewallView(props: FirewallProps) {
                                   display: "inline-block",
                                 }}
                               >
-                                {rule.action}
+                                {action}
                               </span>
                             </td>
-                            <td class="text-text-secondary font-mono">{rule.from}</td>
-                            <td class="text-text-muted font-mono" style={{ "font-size": "10px" }}>
-                              {rule.ipv6 ? "yes" : "—"}
+                            <td
+                              class="font-mono"
+                              style={{ color: isActive ? "var(--text-secondary)" : "var(--text-muted)" }}
+                            >
+                              {from}
                             </td>
-                            <td class="text-right">
-                              <div class="flex items-center justify-end gap-1">
-                                {/* Disable button — only for parseable rules */}
-                                <Show when={canDisable}>
-                                  <button
-                                    class="btn-secondary p-1"
-                                    onClick={() => handleDisableRule(rule)}
-                                    title="Disable rule (can be re-enabled later)"
-                                    disabled={loading()}
-                                  >
-                                    <PowerOff size={11} class="text-accent-warning" />
-                                  </button>
-                                </Show>
+                            <td class="text-text-muted font-mono" style={{ "font-size": "10px" }}>
+                              {ipv6 ? "yes" : "—"}
+                            </td>
+                            <td>
+                              <div class="flex items-center justify-end gap-1.5">
+                                <RuleToggle
+                                  enabled={isActive}
+                                  canToggle={canToggle}
+                                  isLoading={loading()}
+                                  onToggle={() =>
+                                    isActive
+                                      ? handleDisableRule(item.rule)
+                                      : handleEnableRule(item.entry)
+                                  }
+                                />
                                 <button
                                   class="btn-secondary p-1"
-                                  onClick={() => handleDeleteRule(rule.num)}
-                                  title="Permanently delete rule"
+                                  onClick={() =>
+                                    isActive
+                                      ? handleDeleteRule(item.rule.num)
+                                      : handleRemoveDisabledRule(item.entry.id)
+                                  }
+                                  title={isActive ? "Permanently delete rule" : "Remove from saved list"}
                                   disabled={loading()}
                                 >
                                   <Trash2 size={11} class="text-accent-danger" />
@@ -776,82 +863,6 @@ export default function FirewallView(props: FirewallProps) {
                 </table>
               </div>
             </div>
-
-            {/* ── Disabled Rules section ── */}
-            <Show when={disabledRules().length > 0}>
-              <div
-                class="glass-panel p-3 shrink-0 flex flex-col"
-                style={{ "max-height": "220px" }}
-              >
-                <div
-                  class="font-mono uppercase mb-2 shrink-0 flex items-center gap-2"
-                  style={{ "font-size": "9px", "letter-spacing": "0.08em" }}
-                >
-                  <PowerOff size={10} class="text-accent-warning" />
-                  <span class="text-accent-warning">
-                    {disabledRules().length} disabled rule
-                    {disabledRules().length !== 1 ? "s" : ""}
-                  </span>
-                  <span class="text-text-muted">— removed from UFW, stored locally</span>
-                </div>
-
-                <div class="overflow-auto pr-1">
-                  <table class="dense-table">
-                    <thead>
-                      <tr>
-                        <th class="text-left">Port / Service</th>
-                        <th class="text-left">Action</th>
-                        <th class="text-left">Source</th>
-                        <th style={{ width: "100px" }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={disabledRules()}>
-                        {(entry) => (
-                          <tr style={{ opacity: "0.65" }}>
-                            <td class="font-mono text-text-secondary">{entry.to}</td>
-                            <td>
-                              <span
-                                class="font-mono"
-                                style={{
-                                  "font-size": "9px",
-                                  color: "var(--text-muted)",
-                                  "text-transform": "uppercase",
-                                  "letter-spacing": "0.04em",
-                                }}
-                              >
-                                {entry.action}
-                              </span>
-                            </td>
-                            <td class="font-mono text-text-muted">{entry.from}</td>
-                            <td class="text-right">
-                              <div class="flex items-center justify-end gap-1">
-                                <button
-                                  class="btn-secondary p-1 hover:border-accent-success hover:text-accent-success"
-                                  onClick={() => handleEnableRule(entry)}
-                                  title="Re-add this rule to UFW"
-                                  disabled={loading()}
-                                >
-                                  <Power size={11} class="text-accent-success" />
-                                </button>
-                                <button
-                                  class="btn-secondary p-1"
-                                  onClick={() => handleRemoveDisabledRule(entry.id)}
-                                  title="Remove from saved list (cannot be re-enabled)"
-                                  disabled={loading()}
-                                >
-                                  <Trash2 size={11} class="text-accent-danger" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Show>
 
           </div>
         </Show>
