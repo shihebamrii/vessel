@@ -38,7 +38,8 @@ pub fn run() {
             ssh::close_terminal_session,
             ssh::list_proxies,
             ssh::delete_proxy,
-            ssh::toggle_proxy_status
+            ssh::toggle_proxy_status,
+            ssh::manage_ufw
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

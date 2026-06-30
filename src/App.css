@@ -660,3 +660,177 @@
 .gap-x-8 { column-gap: 32px; }
 .gap-y-1  { row-gap: 4px; }
 .gap-y-2  { row-gap: 8px; }
+
+/* ─── Git SCM Panel (VS Code style) ──────────────────────────────────────── */
+
+.scm-tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.scm-tab-btn {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border: none;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 0;
+}
+
+.scm-tab-btn:hover {
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.scm-tab-btn.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-cyan);
+}
+
+/* Section title bars inside SCM (like "STAGED CHANGES") */
+.scm-section-header {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 4px 0 8px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.scm-section-header:hover {
+  background: var(--bg-hover);
+}
+
+/* File rows in the SCM tree */
+.scm-file-row {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding-right: 6px;
+  cursor: default;
+  user-select: none;
+  min-width: 0;
+}
+
+.scm-file-row:hover {
+  background: var(--bg-hover);
+}
+
+/* Small icon action buttons inside file rows (appear on hover) */
+.scm-icon-btn {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.scm-file-row:hover .scm-icon-btn { opacity: 1; }
+
+.scm-icon-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+.scm-icon-btn.stage:hover  { color: var(--accent-success); }
+.scm-icon-btn.discard:hover { color: var(--accent-danger); }
+.scm-icon-btn.unstage:hover { color: var(--accent-warning); }
+
+/* Toolbar icon buttons in the Git panel header */
+.git-header-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  gap: 0;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.git-header-btn:hover  { background: rgba(255,255,255,0.07); color: var(--text-primary); }
+.git-header-btn:active { background: rgba(255,255,255,0.04); }
+.git-header-btn:disabled { opacity: 0.3; pointer-events: none; cursor: not-allowed; }
+
+/* Commit cards in the Log tab */
+.git-commit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.08s;
+  min-width: 0;
+}
+
+.git-commit-row:hover { background: var(--bg-hover); }
+
+/* Branch rows in the Branches tab */
+.git-branch-row {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  height: 32px;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: default;
+  transition: background 0.08s;
+  min-width: 0;
+}
+
+.git-branch-row:hover { background: var(--bg-hover); }
+.git-branch-row.current { background: var(--bg-active); }
+
+/* Repo list items (left panel) */
+.scm-repo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.08s;
+  min-width: 0;
+}
+
+.scm-repo-item:hover { background: var(--bg-hover); }
+.scm-repo-item.active { background: var(--bg-active); }
+.scm-repo-item.active .scm-repo-name { color: var(--accent-cyan); }
+
+/* Hover utility for groups */
+.group:hover .scm-show-on-hover { opacity: 1; }
+.scm-show-on-hover { opacity: 0; transition: opacity 0.1s; }
+
+/* Extra hover utility */
+.hover\:text-accent-success:hover { color: var(--accent-success) !important; }
+.hover\:text-accent-warning:hover { color: var(--accent-warning) !important; }
+.hover\:bg-white\/8:hover { background: rgba(255,255,255,0.08) !important; }
+
+/* min-w-0 for flex overflow */
+.min-w-0 { min-width: 0; }

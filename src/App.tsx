@@ -10,6 +10,7 @@ import ServicesView from "./components/ServicesView";
 import DockerView from "./components/DockerView";
 import ProxyView from "./components/ProxyView";
 import GitView from "./components/GitView";
+import FirewallView from "./components/FirewallView";
 
 interface ServerProfile {
   id: string;
@@ -31,7 +32,7 @@ export default function App() {
   const [selectedProfileId, setSelectedProfileId] = createSignal<string | null>(null);
   const [activeServerId, setActiveServerId] = createSignal<string | null>(null);
   const [connectionState, setConnectionState] = createSignal<"disconnected" | "connecting" | "connected">("disconnected");
-  const [activeTab, setActiveTab] = createSignal<"dashboard" | "explorer" | "terminal" | "services" | "docker" | "proxy" | "git">("dashboard");
+  const [activeTab, setActiveTab] = createSignal<"dashboard" | "explorer" | "terminal" | "services" | "docker" | "proxy" | "git" | "firewall">("dashboard");
   const [errorMessage, setErrorMessage] = createSignal("");
 
   // Server Form State
@@ -372,11 +373,17 @@ export default function App() {
             >
               <Settings size={13} /> Proxy Manager
             </button>
-            <button 
+            <button
               class={`tab-button ${activeTab() === "git" ? "active" : ""}`}
               onClick={() => setActiveTab("git")}
             >
               <GitBranch size={13} /> Git Control Plane
+            </button>
+            <button
+              class={`tab-button ${activeTab() === "firewall" ? "active" : ""}`}
+              onClick={() => setActiveTab("firewall")}
+            >
+              <ShieldAlert size={13} /> Firewall
             </button>
           </div>
         </Show>
@@ -581,6 +588,9 @@ export default function App() {
               </Show>
               <Show when={activeTab() === "git"}>
                 <GitView serverId={activeServerId()!} showToast={showToast} />
+              </Show>
+              <Show when={activeTab() === "firewall"}>
+                <FirewallView serverId={activeServerId()!} showToast={showToast} />
               </Show>
             </ErrorBoundary>
           </div>

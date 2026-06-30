@@ -1195,6 +1195,136 @@ pub async fn start_command_stream(
     Ok(())
 }
 
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+pub struct UfwParams {
+    pub port: Option<u16>,
+    pub port_range: Option<String>,
+    pub proto: Option<String>,
+    pub policy: Option<String>,
+    pub from_ip: Option<String>,
+    pub direction: Option<String>,
+    pub rule_num: Option<u32>,
+}
+
+fn is_valid_ufw_ip(s: &str) -> bool {
+    if s == "any" {
+        return true;
+    }
+    if s.is_empty() || s.len() > 50 {
+        return false;
+    }
+    // Must start with alphanumeric (rules out leading dots/colons/slashes)
+    s.chars().next().map(|c| c.is_ascii_alphanumeric()).unwrap_or(false)
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == ':' || c == '/')
+}
+
+fn is_valid_port_range(s: &str) -> bool {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let start = parts[0].parse::<u16>().unwrap_or(0);
+    let end = parts[1].parse::<u16>().unwrap_or(0);
+    start >= 1 && end >= 1 && start < end
+}
+
+#[tauri::command]
+pub async fn manage_ufw(
+    server_id: String,
+    action: String,
+    params: Option<UfwParams>,
+) -> Result<CommandResult, String> {
+    let cmd = match action.as_str() {
+        "status" => "sudo ufw status numbered".to_string(),
+        "status_verbose" => "sudo ufw status verbose".to_string(),
+        "enable" => "sudo ufw --force enable".to_string(),
+        "disable" => "sudo ufw disable".to_string(),
+        "add_rule" => {
+            let p = params.ok_or("Params required for add_rule")?;
+
+            // Resolve port spec: single port or range
+            let port_spec = if let Some(range) = &p.port_range {
+                if !is_valid_port_range(range) {
+                    return Err("Invalid port range — use start:end (e.g. 3000:4000)".to_string());
+                }
+                range.clone()
+            } else {
+                let port = p.port.ok_or("Port is required")?;
+                if port == 0 {
+                    return Err("Invalid port number".to_string());
+                }
+                port.to_string()
+            };
+
+            let proto = p.proto.as_deref().unwrap_or("tcp");
+            if !["tcp", "udp", "any"].contains(&proto) {
+                return Err("Invalid protocol: must be tcp, udp, or any".to_string());
+            }
+
+            let policy = p.policy.as_deref().unwrap_or("allow");
+            if !["allow", "deny", "reject", "limit"].contains(&policy) {
+                return Err("Invalid policy: must be allow, deny, reject, or limit".to_string());
+            }
+
+            let from = p.from_ip.as_deref().unwrap_or("any");
+            if !is_valid_ufw_ip(from) {
+                return Err("Invalid source IP/CIDR".to_string());
+            }
+
+            let direction = p.direction.as_deref().unwrap_or("in");
+            if !["in", "out", "both"].contains(&direction) {
+                return Err("Invalid direction: must be in, out, or both".to_string());
+            }
+            // "both" uses no direction flag (UFW default)
+            let dir_flag = if direction == "both" { "" } else { direction };
+
+            // Build port/proto token
+            let port_proto = if proto == "any" {
+                port_spec.clone()
+            } else {
+                format!("{}/{}", port_spec, proto)
+            };
+
+            if from == "any" {
+                if dir_flag.is_empty() {
+                    format!("sudo ufw {} {}", policy, port_proto)
+                } else {
+                    format!("sudo ufw {} {} {}", policy, dir_flag, port_proto)
+                }
+            } else if proto == "any" {
+                if dir_flag.is_empty() {
+                    format!("sudo ufw {} from {} to any port {}", policy, from, port_spec)
+                } else {
+                    format!("sudo ufw {} {} from {} to any port {}", policy, dir_flag, from, port_spec)
+                }
+            } else if dir_flag.is_empty() {
+                format!(
+                    "sudo ufw {} proto {} from {} to any port {}",
+                    policy, proto, from, port_spec
+                )
+            } else {
+                format!(
+                    "sudo ufw {} {} proto {} from {} to any port {}",
+                    policy, dir_flag, proto, from, port_spec
+                )
+            }
+        }
+        "delete_rule" => {
+            let p = params.ok_or("Params required for delete_rule")?;
+            let num = p.rule_num.ok_or("Rule number is required")?;
+            if num == 0 {
+                return Err("Invalid rule number".to_string());
+            }
+            format!("sudo ufw --force delete {}", num)
+        }
+        _ => return Err("Invalid UFW action".to_string()),
+    };
+
+    execute_command(server_id, cmd).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
